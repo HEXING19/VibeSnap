@@ -8,7 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var captureManager = CaptureManager.shared
     
     // Capture UI
-    private var overlayWindow: OverlayWindow?
+    private var overlayWindows: [OverlayWindow] = []
     private var thumbnailOverlay: ThumbnailOverlay?
     private var historyPanel: HistoryPanel?
     
@@ -16,8 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize status bar
         statusBarController = StatusBarController()
         
-        // Initialize overlay windows
-        overlayWindow = OverlayWindow()
+        // Initialize overlay windows for each screen
+        createOverlayWindows()
         thumbnailOverlay = ThumbnailOverlay()
         historyPanel = HistoryPanel()
         
@@ -32,6 +32,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Register global hotkeys
         setupHotkeys()
+        
+        // Observe screen configuration changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenConfigurationChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func screenConfigurationChanged() {
+        // Recreate overlay windows when screen configuration changes
+        createOverlayWindows()
+    }
+    
+    private func createOverlayWindows() {
+        // Close existing windows
+        overlayWindows.forEach { $0.close() }
+        overlayWindows.removeAll()
+        
+        // Create a new overlay window for each screen
+        for screen in NSScreen.screens {
+            let overlayWindow = OverlayWindow(screen: screen)
+            overlayWindows.append(overlayWindow)
+        }
+        
+        // Set up callbacks for all windows
+        setupCaptureCallbacks()
     }
     
     private func setupNotificationObservers() {
@@ -78,13 +106,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func setupCaptureCallbacks() {
-        overlayWindow?.onCaptureComplete = { [weak self] image, rect in
-            self?.showThumbnail(image: image, rect: rect)
+        for overlayWindow in overlayWindows {
+            overlayWindow.onCaptureComplete = { [weak self] image, rect in
+                // Close all overlay windows
+                self?.closeAllOverlays()
+                self?.showThumbnail(image: image, rect: rect)
+            }
+            
+            overlayWindow.onCancel = { [weak self] in
+                // Close all overlay windows
+                self?.closeAllOverlays()
+            }
         }
-        
-        overlayWindow?.onCancel = {
-            // Capture cancelled
-        }
+    }
+    
+    private func closeAllOverlays() {
+        overlayWindows.forEach { $0.orderOut(nil) }
     }
     
     private func showThumbnail(image: NSImage, rect: CGRect) {
@@ -129,7 +166,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             showPermissionAlert()
             return
         }
-        overlayWindow?.startCapture(mode: .area)
+        overlayWindows.forEach { $0.startCapture(mode: .area) }
     }
     
     private func startWindowCapture() {
@@ -137,7 +174,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             showPermissionAlert()
             return
         }
-        overlayWindow?.startCapture(mode: .window)
+        overlayWindows.forEach { $0.startCapture(mode: .window) }
     }
     
     private func startFullscreenCapture() {

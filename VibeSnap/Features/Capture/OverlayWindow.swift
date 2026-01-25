@@ -2,48 +2,44 @@ import AppKit
 import ScreenCaptureKit
 
 /// Full-screen overlay window for screenshot capture
-class OverlayWindow: NSWindow {
+final class OverlayWindow: NSWindow {
     private var overlayView: OverlayView?
     var onCaptureComplete: ((NSImage, CGRect) -> Void)?
     var onCancel: (() -> Void)?
+    private(set) var targetScreen: NSScreen
     
-    init() {
-        // Get the main screen bounds
-        let screenRect = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    init(screen: NSScreen) {
+        self.targetScreen = screen
         
+        // Use the designated initializer without screen parameter
         super.init(
-            contentRect: screenRect,
+            contentRect: screen.frame,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
         
-        setupWindow()
-        setupOverlayView()
+        setupWindow(for: screen)
+        setupOverlayView(for: screen)
     }
     
-    private func setupWindow() {
+    private func setupWindow(for screen: NSScreen) {
         self.level = .screenSaver
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = false
         self.ignoresMouseEvents = false
         self.acceptsMouseMovedEvents = true
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         
-        // Cover all screens
-        if let screens = NSScreen.screens as [NSScreen]? {
-            var unionRect = CGRect.zero
-            for screen in screens {
-                unionRect = unionRect.union(screen.frame)
-            }
-            self.setFrame(unionRect, display: true)
-        }
+        // Set frame to exactly match the target screen
+        self.setFrame(screen.frame, display: true)
     }
     
-    private func setupOverlayView() {
-        overlayView = OverlayView(frame: self.frame)
+    private func setupOverlayView(for screen: NSScreen) {
+        overlayView = OverlayView(frame: CGRect(origin: .zero, size: screen.frame.size))
         overlayView?.overlayWindow = self
+        overlayView?.targetScreen = screen
         self.contentView = overlayView
     }
     
@@ -74,6 +70,7 @@ enum CaptureMode {
 class OverlayView: NSView {
     weak var overlayWindow: OverlayWindow?
     var captureMode: CaptureMode = .area
+    var targetScreen: NSScreen?
     
     // Selection state
     private var isSelecting = false
@@ -224,13 +221,13 @@ class OverlayView: NSView {
     
     private func convertScreenToView(_ screenRect: CGRect) -> CGRect {
         // SCWindow.frame uses screen coordinates where (0,0) is bottom-left of main screen
-        // NSView uses flipped coordinates where (0,0) is top-left of the view
+        // NSView uses coordinates relative to its window where (0,0) is bottom-left
         
-        guard let windowFrame = window?.frame else { return screenRect }
+        guard let screen = targetScreen else { return screenRect }
         
-        // The overlay window covers all screens, so we need to account for its origin
-        let viewX = screenRect.origin.x - windowFrame.origin.x
-        let viewY = windowFrame.height - (screenRect.origin.y - windowFrame.origin.y) - screenRect.height
+        // Convert from global screen coordinates to screen-relative coordinates
+        let viewX = screenRect.origin.x - screen.frame.origin.x
+        let viewY = screenRect.origin.y - screen.frame.origin.y
         
         return CGRect(x: viewX, y: viewY, width: screenRect.width, height: screenRect.height)
     }
@@ -333,10 +330,10 @@ class OverlayView: NSView {
     
     private func convertViewToScreen(_ point: CGPoint) -> CGPoint {
         // Convert view coordinates back to screen coordinates
-        guard let windowFrame = window?.frame else { return point }
+        guard let screen = targetScreen else { return point }
         
-        let screenX = point.x + windowFrame.origin.x
-        let screenY = windowFrame.height - point.y + windowFrame.origin.y
+        let screenX = point.x + screen.frame.origin.x
+        let screenY = point.y + screen.frame.origin.y
         
         return CGPoint(x: screenX, y: screenY)
     }
@@ -395,16 +392,14 @@ class OverlayView: NSView {
     private func convertViewToScreenRect(_ rect: CGRect) -> CGRect {
         // Convert view coordinates to NSScreen coordinates
         // The NSScreen to SCDisplay conversion will be done in CaptureManager
-        guard let windowFrame = window?.frame else { return rect }
+        guard let screen = targetScreen else { return rect }
         
-        // IMPORTANT: NSView is UNFLIPPED by default!
-        // View coordinates: (0,0) at BOTTOM-left of window, Y increases UPWARD
-        // NSScreen coordinates: (0,0) at bottom-left of main screen, Y increases upward
-        // Since both coordinate systems have Y increasing upward from bottom, the conversion is direct.
+        // View coordinates are relative to the window (which matches the screen)
+        // NSScreen coordinates are global
+        // Both use bottom-left origin with Y increasing upward
         
-        // For unflipped view: add window origin to view coordinates
-        let nsScreenX = rect.origin.x + windowFrame.origin.x
-        let nsScreenY = rect.origin.y + windowFrame.origin.y
+        let nsScreenX = rect.origin.x + screen.frame.origin.x
+        let nsScreenY = rect.origin.y + screen.frame.origin.y
         
         return CGRect(
             x: nsScreenX,
