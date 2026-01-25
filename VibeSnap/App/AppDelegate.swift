@@ -1,0 +1,179 @@
+import AppKit
+import SwiftUI
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusBarController: StatusBarController?
+    private var permissionsManager = PermissionsManager.shared
+    private var hotkeyManager = HotkeyManager.shared
+    private var captureManager = CaptureManager.shared
+    
+    // Capture UI
+    private var overlayWindow: OverlayWindow?
+    private var thumbnailOverlay: ThumbnailOverlay?
+    private var historyPanel: HistoryPanel?
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Initialize status bar
+        statusBarController = StatusBarController()
+        
+        // Initialize overlay windows
+        overlayWindow = OverlayWindow()
+        thumbnailOverlay = ThumbnailOverlay()
+        historyPanel = HistoryPanel()
+        
+        // Set up capture callbacks
+        setupCaptureCallbacks()
+        
+        // Set up notification observers for menu actions
+        setupNotificationObservers()
+        
+        // Check screen capture permissions on first launch
+        checkPermissions()
+        
+        // Register global hotkeys
+        setupHotkeys()
+    }
+    
+    private func setupNotificationObservers() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleCaptureArea),
+            name: .captureArea, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleCaptureWindow),
+            name: .captureWindow, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleCaptureFullscreen),
+            name: .captureFullscreen, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleShowHistory),
+            name: .showHistory, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleShowSettings),
+            name: .showSettings, object: nil
+        )
+    }
+    
+    @objc private func handleCaptureArea() {
+        startAreaCapture()
+    }
+    
+    @objc private func handleCaptureWindow() {
+        startWindowCapture()
+    }
+    
+    @objc private func handleCaptureFullscreen() {
+        startFullscreenCapture()
+    }
+    
+    @objc private func handleShowHistory() {
+        showHistoryPanel()
+    }
+    
+    @objc private func handleShowSettings() {
+        SettingsWindowController.shared.showSettings()
+    }
+    
+    private func setupCaptureCallbacks() {
+        overlayWindow?.onCaptureComplete = { [weak self] image, rect in
+            self?.showThumbnail(image: image, rect: rect)
+        }
+        
+        overlayWindow?.onCancel = {
+            // Capture cancelled
+        }
+    }
+    
+    private func showThumbnail(image: NSImage, rect: CGRect) {
+        // Save to history
+        HistoryManager.shared.addToHistory(image: image, rect: rect)
+        
+        thumbnailOverlay?.show(with: image, rect: rect)
+    }
+    
+    private func checkPermissions() {
+        if !permissionsManager.hasScreenCapturePermission {
+            permissionsManager.requestScreenCapturePermission { granted in
+                if !granted {
+                    self.showPermissionAlert()
+                }
+            }
+        }
+    }
+    
+    private func setupHotkeys() {
+        hotkeyManager.onCaptureArea = { [weak self] in
+            self?.startAreaCapture()
+        }
+        hotkeyManager.onCaptureWindow = { [weak self] in
+            self?.startWindowCapture()
+        }
+        hotkeyManager.onCaptureFullscreen = { [weak self] in
+            self?.startFullscreenCapture()
+        }
+        hotkeyManager.onShowHistory = { [weak self] in
+            self?.showHistoryPanel()
+        }
+        hotkeyManager.registerHotkeys()
+    }
+    
+    private func showHistoryPanel() {
+        historyPanel?.show()
+    }
+    
+    private func startAreaCapture() {
+        guard permissionsManager.hasScreenCapturePermission else {
+            showPermissionAlert()
+            return
+        }
+        overlayWindow?.startCapture(mode: .area)
+    }
+    
+    private func startWindowCapture() {
+        guard permissionsManager.hasScreenCapturePermission else {
+            showPermissionAlert()
+            return
+        }
+        overlayWindow?.startCapture(mode: .window)
+    }
+    
+    private func startFullscreenCapture() {
+        guard permissionsManager.hasScreenCapturePermission else {
+            showPermissionAlert()
+            return
+        }
+        
+        captureManager.captureFullscreen { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let image):
+                    let screenRect = NSScreen.main?.frame ?? .zero
+                    self?.showThumbnail(image: image, rect: screenRect)
+                case .failure(let error):
+                    print("Capture failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    private func showPermissionAlert() {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Screen Recording Permission Required"
+            alert.informativeText = "VibeSnap needs Screen Recording permission to capture screenshots. Please enable it in System Settings > Privacy & Security > Screen Recording."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Later")
+            
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        }
+    }
+}
