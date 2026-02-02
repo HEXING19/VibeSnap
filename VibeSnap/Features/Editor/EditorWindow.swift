@@ -271,61 +271,101 @@ class EditorToolbar: NSView {
 
 /// Annotation tool enum
 enum AnnotationTool: Int {
-    case arrow = 0
-    case rectangle = 1
-    case highlighter = 2
-    case blur = 3
-    case text = 4
+    case rectangle = 0
+    case ellipse = 1
+    case line = 2
+    case arrow = 3
+    case freehand = 4
+    case callout = 5
+    case text = 6
+    case number = 7
+    case mosaic = 8
+    case magnifier = 9
+    case highlighter = 10
+    case blur = 11  // Keep for backward compatibility
 }
 
-/// Base class for all annotations
+/// Base class for all annotations with configurable properties
 class Annotation {
     var color: NSColor = .systemRed
     var startPoint: CGPoint = .zero
     var endPoint: CGPoint = .zero
     
+    // Common properties
+    var lineWidth: CGFloat = 3.0
+    var opacity: CGFloat = 1.0
+    var cornerRadius: CGFloat = 0.0
+    var filled: Bool = false
+    
     func draw(in context: CGContext) {
         // Override in subclasses
     }
+    
+    func getRect() -> CGRect {
+        return CGRect(
+            x: min(startPoint.x, endPoint.x),
+            y: min(startPoint.y, endPoint.y),
+            width: abs(endPoint.x - startPoint.x),
+            height: abs(endPoint.y - startPoint.y)
+        )
+    }
 }
 
-/// Arrow annotation with bezier curve
+/// Arrow annotation with configurable properties
 class ArrowAnnotation: Annotation {
+    var curved: Bool = false  // Whether to use curved line
+    
     override func draw(in context: CGContext) {
+        context.saveGState()
+        context.setAlpha(opacity)
         context.setStrokeColor(color.cgColor)
-        context.setLineWidth(3)
+        context.setLineWidth(lineWidth)
         context.setLineCap(.round)
         
-        // Draw curved arrow line using bezier
         let path = CGMutablePath()
         path.move(to: startPoint)
         
-        // Calculate control point for curve
-        let midX = (startPoint.x + endPoint.x) / 2
-        let midY = (startPoint.y + endPoint.y) / 2
-        let dx = endPoint.x - startPoint.x
-        let dy = endPoint.y - startPoint.y
-        let controlPoint = CGPoint(x: midX - dy * 0.2, y: midY + dx * 0.2)
+        if curved {
+            // Draw curved arrow line using bezier
+            let midX = (startPoint.x + endPoint.x) / 2
+            let midY = (startPoint.y + endPoint.y) / 2
+            let dx = endPoint.x - startPoint.x
+            let dy = endPoint.y - startPoint.y
+            let controlPoint = CGPoint(x: midX - dy * 0.2, y: midY + dx * 0.2)
+            path.addQuadCurve(to: endPoint, control: controlPoint)
+            context.addPath(path)
+            context.strokePath()
+            
+            // Draw arrowhead based on curve direction
+            let angle = atan2(endPoint.y - controlPoint.y, endPoint.x - controlPoint.x)
+            drawArrowhead(in: context, at: endPoint, angle: angle)
+        } else {
+            // Draw straight arrow
+            path.addLine(to: endPoint)
+            context.addPath(path)
+            context.strokePath()
+            
+            let angle = atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x)
+            drawArrowhead(in: context, at: endPoint, angle: angle)
+        }
         
-        path.addQuadCurve(to: endPoint, control: controlPoint)
-        context.addPath(path)
-        context.strokePath()
-        
-        // Draw arrowhead
-        let angle = atan2(endPoint.y - controlPoint.y, endPoint.x - controlPoint.x)
-        let arrowLength: CGFloat = 15
+        context.restoreGState()
+    }
+    
+    private func drawArrowhead(in context: CGContext, at point: CGPoint, angle: CGFloat) {
+        let arrowLength: CGFloat = lineWidth * 5
         let arrowAngle: CGFloat = .pi / 6
         
         let arrowPath = CGMutablePath()
-        arrowPath.move(to: endPoint)
+        arrowPath.move(to: point)
         arrowPath.addLine(to: CGPoint(
-            x: endPoint.x - arrowLength * cos(angle - arrowAngle),
-            y: endPoint.y - arrowLength * sin(angle - arrowAngle)
+            x: point.x - arrowLength * cos(angle - arrowAngle),
+            y: point.y - arrowLength * sin(angle - arrowAngle)
         ))
-        arrowPath.move(to: endPoint)
+        arrowPath.move(to: point)
         arrowPath.addLine(to: CGPoint(
-            x: endPoint.x - arrowLength * cos(angle + arrowAngle),
-            y: endPoint.y - arrowLength * sin(angle + arrowAngle)
+            x: point.x - arrowLength * cos(angle + arrowAngle),
+            y: point.y - arrowLength * sin(angle + arrowAngle)
         ))
         
         context.addPath(arrowPath)
@@ -333,20 +373,286 @@ class ArrowAnnotation: Annotation {
     }
 }
 
-/// Rectangle annotation
+/// Rectangle annotation with corner radius and fill support
 class RectangleAnnotation: Annotation {
     override func draw(in context: CGContext) {
-        context.setStrokeColor(color.cgColor)
-        context.setLineWidth(3)
+        context.saveGState()
+        context.setAlpha(opacity)
         
-        let rect = CGRect(
-            x: min(startPoint.x, endPoint.x),
-            y: min(startPoint.y, endPoint.y),
-            width: abs(endPoint.x - startPoint.x),
-            height: abs(endPoint.y - startPoint.y)
+        let rect = getRect()
+        let path: CGPath
+        
+        if cornerRadius > 0 {
+            path = CGPath(roundedRect: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        } else {
+            path = CGPath(rect: rect, transform: nil)
+        }
+        
+        if filled {
+            context.setFillColor(color.cgColor)
+            context.addPath(path)
+            context.fillPath()
+        } else {
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(lineWidth)
+            context.addPath(path)
+            context.strokePath()
+        }
+        
+        context.restoreGState()
+    }
+}
+
+/// Ellipse annotation with fill support
+class EllipseAnnotation: Annotation {
+    override func draw(in context: CGContext) {
+        context.saveGState()
+        context.setAlpha(opacity)
+        
+        let rect = getRect()
+        
+        if filled {
+            context.setFillColor(color.cgColor)
+            context.fillEllipse(in: rect)
+        } else {
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(lineWidth)
+            context.strokeEllipse(in: rect)
+        }
+        
+        context.restoreGState()
+    }
+}
+
+/// Line annotation with dash support
+class LineAnnotation: Annotation {
+    var dashed: Bool = false
+    var dashPattern: [CGFloat] = [8, 4]
+    
+    override func draw(in context: CGContext) {
+        context.saveGState()
+        context.setAlpha(opacity)
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+        
+        if dashed {
+            context.setLineDash(phase: 0, lengths: dashPattern)
+        }
+        
+        context.move(to: startPoint)
+        context.addLine(to: endPoint)
+        context.strokePath()
+        
+        context.restoreGState()
+    }
+}
+
+/// Freehand drawing annotation
+class FreehandAnnotation: Annotation {
+    var points: [CGPoint] = []
+    
+    override func draw(in context: CGContext) {
+        guard points.count > 1 else { return }
+        
+        context.saveGState()
+        context.setAlpha(opacity)
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        
+        let path = CGMutablePath()
+        path.move(to: points[0])
+        
+        // Use quadratic curves for smoother lines
+        for i in 1..<points.count {
+            if i < points.count - 1 {
+                let midPoint = CGPoint(
+                    x: (points[i].x + points[i + 1].x) / 2,
+                    y: (points[i].y + points[i + 1].y) / 2
+                )
+                path.addQuadCurve(to: midPoint, control: points[i])
+            } else {
+                path.addLine(to: points[i])
+            }
+        }
+        
+        context.addPath(path)
+        context.strokePath()
+        context.restoreGState()
+    }
+}
+
+/// Callout annotation (speech bubble with text)
+class CalloutAnnotation: Annotation {
+    var text: String = ""
+    var font: NSFont = .systemFont(ofSize: 14, weight: .medium)
+    var backgroundColor: NSColor = .white
+    var textColor: NSColor = .black
+    var tailPosition: CGPoint = .zero  // Where the tail points to
+    
+    override func draw(in context: CGContext) {
+        context.saveGState()
+        context.setAlpha(opacity)
+        
+        let rect = getRect()
+        let padding: CGFloat = 8
+        let tailHeight: CGFloat = 15
+        
+        // Draw bubble background
+        let bubblePath = CGMutablePath()
+        let bubbleRect = CGRect(x: rect.minX, y: rect.minY + tailHeight, 
+                                 width: rect.width, height: rect.height - tailHeight)
+        
+        bubblePath.addRoundedRect(in: bubbleRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius)
+        
+        // Draw tail
+        let tailX = bubbleRect.midX
+        bubblePath.move(to: CGPoint(x: tailX - 10, y: bubbleRect.minY))
+        bubblePath.addLine(to: CGPoint(x: tailX, y: rect.minY))
+        bubblePath.addLine(to: CGPoint(x: tailX + 10, y: bubbleRect.minY))
+        
+        context.setFillColor(backgroundColor.cgColor)
+        context.addPath(bubblePath)
+        context.fillPath()
+        
+        // Draw border
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(lineWidth)
+        context.addPath(bubblePath)
+        context.strokePath()
+        
+        // Draw text
+        if !text.isEmpty {
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: textColor
+            ]
+            let textRect = bubbleRect.insetBy(dx: padding, dy: padding)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            text.draw(in: textRect, withAttributes: attributes)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        
+        context.restoreGState()
+    }
+}
+
+/// Number annotation (circled number)
+class NumberAnnotation: Annotation {
+    var number: Int = 1
+    var fontSize: CGFloat = 16
+    
+    override func draw(in context: CGContext) {
+        context.saveGState()
+        context.setAlpha(opacity)
+        
+        // Calculate circle size based on number digits
+        let text = "\(number)"
+        let size = max(fontSize * 2, CGFloat(text.count) * fontSize + 8)
+        let circleRect = CGRect(
+            x: startPoint.x - size / 2,
+            y: startPoint.y - size / 2,
+            width: size,
+            height: size
         )
         
-        context.stroke(rect)
+        // Draw filled circle
+        context.setFillColor(color.cgColor)
+        context.fillEllipse(in: circleRect)
+        
+        // Draw number
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+            .foregroundColor: NSColor.white
+        ]
+        let textSize = text.size(withAttributes: attributes)
+        let textPoint = CGPoint(
+            x: circleRect.midX - textSize.width / 2,
+            y: circleRect.midY - textSize.height / 2
+        )
+        
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        text.draw(at: textPoint, withAttributes: attributes)
+        NSGraphicsContext.restoreGraphicsState()
+        
+        context.restoreGState()
+    }
+}
+
+/// Mosaic/Pixelate annotation
+class MosaicAnnotation: Annotation {
+    var blockSize: CGFloat = 10
+    var sourceImage: CGImage?
+    
+    override func draw(in context: CGContext) {
+        guard let source = sourceImage else { return }
+        
+        context.saveGState()
+        
+        let rect = getRect()
+        
+        // Create pixelated version of the region
+        let ciImage = CIImage(cgImage: source)
+        let filter = CIFilter(name: "CIPixellate")!
+        filter.setValue(ciImage, forKey: kCIInputImageKey)
+        filter.setValue(blockSize, forKey: kCIInputScaleKey)
+        
+        if let output = filter.outputImage {
+            let ciContext = CIContext()
+            if let pixelated = ciContext.createCGImage(output, from: ciImage.extent) {
+                context.clip(to: rect)
+                context.draw(pixelated, in: context.boundingBoxOfClipPath)
+            }
+        }
+        
+        context.restoreGState()
+    }
+}
+
+/// Magnifier annotation
+class MagnifierAnnotation: Annotation {
+    var zoomLevel: CGFloat = 2.0
+    var borderWidth: CGFloat = 3
+    var sourceImage: CGImage?
+    
+    override func draw(in context: CGContext) {
+        guard let source = sourceImage else { return }
+        
+        context.saveGState()
+        context.setAlpha(opacity)
+        
+        let rect = getRect()
+        let radius = min(rect.width, rect.height) / 2
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        
+        // Create circular clip
+        context.addEllipse(in: rect)
+        context.clip()
+        
+        // Calculate source rect (smaller area to zoom in)
+        let sourceSize = CGSize(width: rect.width / zoomLevel, height: rect.height / zoomLevel)
+        let sourceRect = CGRect(
+            x: center.x - sourceSize.width / 2,
+            y: center.y - sourceSize.height / 2,
+            width: sourceSize.width,
+            height: sourceSize.height
+        )
+        
+        // Draw zoomed portion
+        context.draw(source, in: rect)
+        
+        context.restoreGState()
+        
+        // Draw border
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(borderWidth)
+        context.strokeEllipse(in: rect.insetBy(dx: borderWidth / 2, dy: borderWidth / 2))
+        context.restoreGState()
     }
 }
 

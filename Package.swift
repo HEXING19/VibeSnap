@@ -17,7 +17,10 @@ let package = Package(
             name: "VibeSnap",
             dependencies: ["HotKey"],
             path: "VibeSnap",
-            exclude: ["Info.plist", "VibeSnap.entitlements"]
+            exclude: ["Info.plist", "VibeSnap.entitlements"],
+            resources: [
+                .process("Resources")
+            ]
         )
     ]
 )

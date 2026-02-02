@@ -9,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // Capture UI
     private var overlayWindows: [OverlayWindow] = []
+    private var annotationToolbar: AnnotationToolbar?
     private var thumbnailOverlay: ThumbnailOverlay?
     private var historyPanel: HistoryPanel?
     
@@ -18,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Initialize overlay windows for each screen
         createOverlayWindows()
+        annotationToolbar = AnnotationToolbar()
         thumbnailOverlay = ThumbnailOverlay()
         historyPanel = HistoryPanel()
         
@@ -110,7 +112,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             overlayWindow.onCaptureComplete = { [weak self] image, rect in
                 // Close all overlay windows
                 self?.closeAllOverlays()
-                self?.showThumbnail(image: image, rect: rect)
+                // Show annotation toolbar for user to choose action
+                self?.showAnnotationToolbar(image: image, rect: rect)
             }
             
             overlayWindow.onCancel = { [weak self] in
@@ -118,10 +121,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closeAllOverlays()
             }
         }
+        
+        // Setup annotation toolbar callbacks
+        annotationToolbar?.onCopy = { [weak self] in
+            // Image already copied in toolbar, just save to history
+            if let image = self?.annotationToolbar?.capturedImage,
+               let rect = self?.annotationToolbar?.capturedRect {
+                HistoryManager.shared.addToHistory(image: image, rect: rect)
+            }
+        }
+        
+        annotationToolbar?.onSave = { [weak self] in
+            // Image already saved in toolbar, just save to history
+            if let image = self?.annotationToolbar?.capturedImage,
+               let rect = self?.annotationToolbar?.capturedRect {
+                HistoryManager.shared.addToHistory(image: image, rect: rect)
+            }
+        }
+        
+        
+        annotationToolbar?.onDone = { [weak self] in
+            // User finished annotating, show thumbnail
+            if let image = self?.annotationToolbar?.capturedImage,
+               let rect = self?.annotationToolbar?.capturedRect {
+                self?.showThumbnail(image: image, rect: rect)
+            }
+        }
+        
+        annotationToolbar?.onCancel = {
+            // User cancelled, do nothing
+        }
     }
     
     private func closeAllOverlays() {
         overlayWindows.forEach { $0.orderOut(nil) }
+    }
+    
+    private func showAnnotationToolbar(image: NSImage, rect: CGRect) {
+        annotationToolbar?.show(with: image, rect: rect)
     }
     
     private func showThumbnail(image: NSImage, rect: CGRect) {

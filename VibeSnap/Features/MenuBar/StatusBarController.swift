@@ -24,7 +24,13 @@ class StatusBarController {
         
         if let button = statusItem?.button {
             // Use SF Symbol for the viewfinder icon
-            if let image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "VibeSnap") {
+            // Load custom icon from Resources
+            if let imagePath = Bundle.module.path(forResource: "MenuBarIcon", ofType: "png"),
+               let image = NSImage(contentsOfFile: imagePath) {
+                image.size = NSSize(width: 18, height: 18) // Standard menu bar icon size
+                image.isTemplate = false
+                button.image = image
+            } else if let image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "VibeSnap") {
                 image.isTemplate = true
                 button.image = image
             }

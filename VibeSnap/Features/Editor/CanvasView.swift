@@ -7,12 +7,24 @@ class CanvasView: NSView {
     private var undoStack: [[Annotation]] = []
     private var redoStack: [[Annotation]] = []
     
-    var currentTool: AnnotationTool = .arrow
+    var currentTool: AnnotationTool = .rectangle
     private var currentAnnotation: Annotation?
     private var currentColor: NSColor = .systemRed
     
+    // Current tool properties
+    var toolLineWidth: CGFloat = 3.0
+    var toolOpacity: CGFloat = 1.0
+    var toolCornerRadius: CGFloat = 0.0
+    var toolFilled: Bool = false
+    
+    // Number tool counter
+    private var numberCounter: Int = 1
+    
     // Text input field for text tool
     private var textField: NSTextField?
+    
+    // Callback for property changes
+    var onPropertiesNeeded: ((AnnotationTool) -> Void)?
     
     init(frame frameRect: NSRect, image: NSImage) {
         self.originalImage = image
@@ -28,7 +40,31 @@ class CanvasView: NSView {
     
     private func setupView() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.darkGray.cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+    
+    func setColor(_ color: NSColor) {
+        currentColor = color
+    }
+    
+    func setLineWidth(_ width: CGFloat) {
+        toolLineWidth = width
+    }
+    
+    func setOpacity(_ opacity: CGFloat) {
+        toolOpacity = opacity
+    }
+    
+    func setCornerRadius(_ radius: CGFloat) {
+        toolCornerRadius = radius
+    }
+    
+    func setFilled(_ filled: Bool) {
+        toolFilled = filled
+    }
+    
+    func resetNumberCounter() {
+        numberCounter = 1
     }
     
     override func draw(_ dirtyRect: NSRect) {
@@ -66,29 +102,105 @@ class CanvasView: NSView {
         )
     }
     
+    // MARK: - Apply current properties to annotation
+    
+    private func applyCurrentProperties(to annotation: Annotation) {
+        annotation.color = currentColor
+        annotation.lineWidth = toolLineWidth
+        annotation.opacity = toolOpacity
+        annotation.cornerRadius = toolCornerRadius
+        annotation.filled = toolFilled
+    }
+    
     // MARK: - Mouse Events
     
     override func mouseDown(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         
-        // Get color from parent toolbar
+        // Get color from parent toolbar if available
         if let toolbar = (superview as? EditorContentView)?.subviews.compactMap({ $0 as? EditorToolbar }).first {
             currentColor = toolbar.currentColor
         }
         
         switch currentTool {
-        case .arrow:
-            let annotation = ArrowAnnotation()
-            annotation.color = currentColor
+        case .rectangle:
+            let annotation = RectangleAnnotation()
+            applyCurrentProperties(to: annotation)
             annotation.startPoint = location
             annotation.endPoint = location
             currentAnnotation = annotation
             
-        case .rectangle:
-            let annotation = RectangleAnnotation()
-            annotation.color = currentColor
+        case .ellipse:
+            let annotation = EllipseAnnotation()
+            applyCurrentProperties(to: annotation)
             annotation.startPoint = location
             annotation.endPoint = location
+            currentAnnotation = annotation
+            
+        case .line:
+            let annotation = LineAnnotation()
+            applyCurrentProperties(to: annotation)
+            annotation.startPoint = location
+            annotation.endPoint = location
+            currentAnnotation = annotation
+            
+        case .arrow:
+            let annotation = ArrowAnnotation()
+            applyCurrentProperties(to: annotation)
+            annotation.startPoint = location
+            annotation.endPoint = location
+            currentAnnotation = annotation
+            
+        case .freehand:
+            let annotation = FreehandAnnotation()
+            applyCurrentProperties(to: annotation)
+            annotation.points = [location]
+            currentAnnotation = annotation
+            
+        case .callout:
+            let annotation = CalloutAnnotation()
+            applyCurrentProperties(to: annotation)
+            annotation.cornerRadius = 8
+            annotation.startPoint = location
+            annotation.endPoint = CGPoint(x: location.x + 150, y: location.y + 80)
+            currentAnnotation = annotation
+            
+        case .text:
+            showTextInput(at: location)
+            return
+            
+        case .number:
+            let annotation = NumberAnnotation()
+            applyCurrentProperties(to: annotation)
+            annotation.number = numberCounter
+            annotation.startPoint = location
+            
+            // Save state for undo
+            undoStack.append(annotations)
+            redoStack.removeAll()
+            annotations.append(annotation)
+            numberCounter += 1
+            needsDisplay = true
+            return
+            
+        case .mosaic:
+            let annotation = MosaicAnnotation()
+            applyCurrentProperties(to: annotation)
+            annotation.startPoint = location
+            annotation.endPoint = location
+            if let cgImage = originalImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                annotation.sourceImage = cgImage
+            }
+            currentAnnotation = annotation
+            
+        case .magnifier:
+            let annotation = MagnifierAnnotation()
+            applyCurrentProperties(to: annotation)
+            annotation.startPoint = location
+            annotation.endPoint = location
+            if let cgImage = originalImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                annotation.sourceImage = cgImage
+            }
             currentAnnotation = annotation
             
         case .highlighter:
@@ -103,10 +215,6 @@ class CanvasView: NSView {
             annotation.endPoint = location
             annotation.applyBlur(to: originalImage, rect: calculateImageRect())
             currentAnnotation = annotation
-            
-        case .text:
-            showTextInput(at: location)
-            return
         }
         
         needsDisplay = true
@@ -117,6 +225,8 @@ class CanvasView: NSView {
         
         if let highlighter = currentAnnotation as? HighlighterAnnotation {
             highlighter.points.append(location)
+        } else if let freehand = currentAnnotation as? FreehandAnnotation {
+            freehand.points.append(location)
         } else {
             currentAnnotation?.endPoint = location
         }
@@ -248,5 +358,9 @@ class CanvasView: NSView {
         image.unlockFocus()
         
         return image
+    }
+    
+    func getFinalImage() -> NSImage? {
+        return renderFinalImage()
     }
 }
