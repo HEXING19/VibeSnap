@@ -4,7 +4,7 @@ import SwiftUI
 // Notification names for capture actions
 extension Notification.Name {
     static let captureArea = Notification.Name("com.vibesnap.captureArea")
-    static let captureWindow = Notification.Name("com.vibesnap.captureWindow")
+
     static let captureFullscreen = Notification.Name("com.vibesnap.captureFullscreen")
     static let showHistory = Notification.Name("com.vibesnap.showHistory")
     static let showClipboardHistory = Notification.Name("com.vibesnap.showClipboardHistory")
@@ -52,11 +52,7 @@ class StatusBarController {
         captureAreaItem.target = self
         menu.addItem(captureAreaItem)
         
-        // Capture Window
-        let captureWindowItem = NSMenuItem(title: "Capture Window", action: #selector(captureWindow), keyEquivalent: "2")
-        captureWindowItem.keyEquivalentModifierMask = [.shift, .command]
-        captureWindowItem.target = self
-        menu.addItem(captureWindowItem)
+
         
         // Capture Fullscreen
         let captureFullscreenItem = NSMenuItem(title: "Capture Fullscreen", action: #selector(captureFullscreen), keyEquivalent: "3")
@@ -103,9 +99,7 @@ class StatusBarController {
         NotificationCenter.default.post(name: .captureArea, object: nil)
     }
     
-    @objc private func captureWindow() {
-        NotificationCenter.default.post(name: .captureWindow, object: nil)
-    }
+
     
     @objc private func captureFullscreen() {
         NotificationCenter.default.post(name: .captureFullscreen, object: nil)

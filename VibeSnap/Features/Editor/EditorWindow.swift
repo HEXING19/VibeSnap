@@ -114,9 +114,7 @@ class EditorContentView: NSView {
         toolbar?.onRedo = { [weak self] in
             self?.canvas?.redo()
         }
-        toolbar?.onDone = { [weak self] in
-            self?.editorWindow?.saveAndClose()
-        }
+
         addSubview(toolbar!)
         
         // Canvas below toolbar
@@ -138,7 +136,7 @@ class EditorToolbar: NSView {
     var onToolSelected: ((AnnotationTool) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
-    var onDone: (() -> Void)?
+
     
     private var selectedTool: AnnotationTool = .arrow
     private var toolButtons: [NSButton] = []
@@ -194,14 +192,7 @@ class EditorToolbar: NSView {
         redoButton.autoresizingMask = [.minXMargin]
         addSubview(redoButton)
         
-        // Done button
-        let doneButton = NSButton(frame: CGRect(x: frame.width - 72, y: (frame.height - 32) / 2, width: 60, height: 32))
-        doneButton.title = "Done"
-        doneButton.bezelStyle = .rounded
-        doneButton.target = self
-        doneButton.action = #selector(doneClicked)
-        doneButton.autoresizingMask = [.minXMargin]
-        addSubview(doneButton)
+
         
         // Select first tool
         selectTool(toolButtons.first)
@@ -260,9 +251,7 @@ class EditorToolbar: NSView {
         onRedo?()
     }
     
-    @objc private func doneClicked() {
-        onDone?()
-    }
+
     
     var currentColor: NSColor {
         return colorWell?.color ?? .systemRed

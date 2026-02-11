@@ -13,6 +13,7 @@ class SettingsWindowController: NSWindowController {
             defer: false
         )
         window.title = "VibeSnap Settings"
+        window.level = .floating
         window.center()
         
         super.init(window: window)

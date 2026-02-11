@@ -202,42 +202,32 @@ struct ClipboardHistoryContentView: View {
 
 // MARK: - Clipboard History Window Controller
 
-/// Floating panel window for clipboard history
+/// Window controller for clipboard history, styled to match Settings window
 class ClipboardHistoryWindowController: NSWindowController {
     static let shared = ClipboardHistoryWindowController()
     
     private init() {
-        let window = NSPanel(
+        let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
-            styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         
         window.title = "Clipboard History"
-        window.center()
         window.level = .floating
-        window.isFloatingPanel = true
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.center()
         window.minSize = NSSize(width: 550, height: 350)
-        window.isMovableByWindowBackground = true
-        
-        // Use visual effect view for vibrancy
-        let visualEffect = NSVisualEffectView(frame: window.contentView!.bounds)
-        visualEffect.autoresizingMask = [.width, .height]
-        visualEffect.blendingMode = .behindWindow
-        visualEffect.material = .sidebar
-        visualEffect.state = .followsWindowActiveState
-        window.contentView = visualEffect
+        window.isMovableByWindowBackground = false
+        window.titlebarAppearsTransparent = false
+        window.toolbarStyle = .unified
         
         super.init(window: window)
         
         let hostingView = NSHostingView(
             rootView: ClipboardHistoryContentView(clipboardManager: ClipboardManager.shared)
         )
-        hostingView.frame = visualEffect.bounds
-        hostingView.autoresizingMask = [.width, .height]
-        visualEffect.addSubview(hostingView)
+        window.contentView = hostingView
     }
     
     required init?(coder: NSCoder) {

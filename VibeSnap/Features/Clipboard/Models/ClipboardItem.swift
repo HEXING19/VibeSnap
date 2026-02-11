@@ -43,8 +43,8 @@ struct ImageClipItem: Identifiable, Equatable {
     let height: Int
     
     /// Initialize from raw image data with size limit
-    init?(imageData: Data, maxSize: Int = 10_000_000) {
-        // Limit image size to prevent memory issues (10MB default)
+    init?(imageData: Data, maxSize: Int = 50_000_000) {
+        // Limit image size to prevent memory issues (50MB default)
         guard imageData.count <= maxSize else { return nil }
         guard let nsImage = NSImage(data: imageData) else { return nil }
         guard let representation = nsImage.representations.first else { return nil }
@@ -52,7 +52,20 @@ struct ImageClipItem: Identifiable, Equatable {
         self.id = UUID()
         self.createdAt = Date()
         self.isPinned = false
-        self.imageData = imageData
+        
+        // Compress large images (>10MB) to JPEG to save storage
+        if imageData.count > 10_000_000 {
+            if let tiffData = nsImage.tiffRepresentation,
+               let bitmapRep = NSBitmapImageRep(data: tiffData),
+               let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) {
+                self.imageData = jpegData
+            } else {
+                self.imageData = imageData
+            }
+        } else {
+            self.imageData = imageData
+        }
+        
         self.width = representation.pixelsWide > 0 ? representation.pixelsWide : Int(nsImage.size.width)
         self.height = representation.pixelsHigh > 0 ? representation.pixelsHigh : Int(nsImage.size.height)
     }

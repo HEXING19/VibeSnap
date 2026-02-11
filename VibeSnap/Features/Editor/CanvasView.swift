@@ -1,7 +1,7 @@
 import AppKit
 
 /// Canvas view for drawing annotations on the screenshot
-class CanvasView: NSView {
+class CanvasView: NSView, NSTextFieldDelegate {
     private var originalImage: NSImage
     private var annotations: [Annotation] = []
     private var undoStack: [[Annotation]] = []
@@ -158,12 +158,8 @@ class CanvasView: NSView {
             currentAnnotation = annotation
             
         case .callout:
-            let annotation = CalloutAnnotation()
-            applyCurrentProperties(to: annotation)
-            annotation.cornerRadius = 8
-            annotation.startPoint = location
-            annotation.endPoint = CGPoint(x: location.x + 150, y: location.y + 80)
-            currentAnnotation = annotation
+            showCalloutInput(at: location)
+            return
             
         case .text:
             showTextInput(at: location)
@@ -249,17 +245,48 @@ class CanvasView: NSView {
     // MARK: - Text Input
     
     private func showTextInput(at location: CGPoint) {
+        // Remove any existing text field
         textField?.removeFromSuperview()
+        textField = nil
         
+        // Create text field at the clicked location
         textField = NSTextField(frame: CGRect(x: location.x, y: location.y - 12, width: 200, height: 24))
         textField?.isBordered = true
         textField?.backgroundColor = .white
         textField?.font = .systemFont(ofSize: 18)
+        textField?.focusRingType = .none
+        textField?.delegate = self
         textField?.target = self
         textField?.action = #selector(textInputComplete)
+        textField?.isEditable = true
+        textField?.isSelectable = true
+        textField?.placeholderString = "输入文字..."
+        
+        // Store the location for later use
+        textField?.tag = 1  // Mark as text tool
         
         addSubview(textField!)
-        textField?.becomeFirstResponder()
+        
+        // CRITICAL FIX: Ensure the editor window becomes key and the text field gets focus
+        // This prevents keyboard input from going to the previous window
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let field = self.textField, let window = self.window else { return }
+            
+            // Force app activation and window focus
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.makeKey()
+            
+            // Give focus to the text field
+            window.makeFirstResponder(field)
+            
+            // Double-check that the field has focus
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak field, weak window] in
+                if let field = field, let window = window {
+                    window.makeFirstResponder(field)
+                }
+            }
+        }
     }
     
     @objc private func textInputComplete() {
@@ -283,6 +310,100 @@ class CanvasView: NSView {
         textField?.removeFromSuperview()
         textField = nil
         needsDisplay = true
+    }
+    
+    private func showCalloutInput(at location: CGPoint) {
+        // Remove any existing text field
+        textField?.removeFromSuperview()
+        textField = nil
+        
+        // Create a larger text field for callout
+        textField = NSTextField(frame: CGRect(x: location.x, y: location.y - 12, width: 150, height: 60))
+        textField?.isBordered = true
+        textField?.backgroundColor = .white
+        textField?.font = .systemFont(ofSize: 14)
+        textField?.focusRingType = .none
+        textField?.delegate = self
+        textField?.target = self
+        textField?.action = #selector(calloutInputComplete)
+        textField?.isEditable = true
+        textField?.isSelectable = true
+        textField?.placeholderString = "输入标注文字..."
+        
+        // Store the location for later use
+        textField?.tag = 2  // Mark as callout tool
+        
+        addSubview(textField!)
+        
+        // CRITICAL FIX: Ensure the editor window becomes key and the text field gets focus
+        // This prevents keyboard input from going to the previous window
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let field = self.textField, let window = self.window else { return }
+            
+            // Force app activation and window focus
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.makeKey()
+            
+            // Give focus to the text field
+            window.makeFirstResponder(field)
+            
+            // Double-check that the field has focus
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak field, weak window] in
+                if let field = field, let window = window {
+                    window.makeFirstResponder(field)
+                }
+            }
+        }
+    }
+    
+    @objc private func calloutInputComplete() {
+        guard let field = textField, !field.stringValue.isEmpty else {
+            textField?.removeFromSuperview()
+            textField = nil
+            return
+        }
+        
+        let annotation = CalloutAnnotation()
+        applyCurrentProperties(to: annotation)
+        annotation.cornerRadius = 8
+        annotation.text = field.stringValue
+        annotation.color = currentColor
+        
+        // Position callout based on text field location
+        let location = field.frame.origin
+        annotation.startPoint = location
+        annotation.endPoint = CGPoint(x: location.x + 150, y: location.y + 80)
+        
+        // Save state for undo
+        undoStack.append(annotations)
+        redoStack.removeAll()
+        
+        annotations.append(annotation)
+        
+        textField?.removeFromSuperview()
+        textField = nil
+        needsDisplay = true
+    }
+    
+    // MARK: - NSTextFieldDelegate
+    
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            // User pressed Return key - trigger the appropriate completion
+            if let field = textField, field.action == #selector(calloutInputComplete) {
+                calloutInputComplete()
+            } else {
+                textInputComplete()
+            }
+            return true
+        } else if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            // User pressed Escape key
+            textField?.removeFromSuperview()
+            textField = nil
+            return true
+        }
+        return false
     }
     
     // MARK: - Undo/Redo

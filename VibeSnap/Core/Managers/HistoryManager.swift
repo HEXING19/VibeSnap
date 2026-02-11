@@ -33,16 +33,18 @@ final class HistoryManager {
             try? pngData.write(to: fileURL)
         }
         
-        // Create history item
+        // Create history item (no thumbnail yet - lazy load)
         let item = HistoryItem(
             id: UUID(),
             timestamp: timestamp,
             fileURL: fileURL,
-            thumbnailImage: createThumbnail(from: image),
             captureRect: rect
         )
         
         historyItems.insert(item, at: 0)
+        
+        // Generate thumbnail asynchronously for cache
+        ThumbnailCache.shared.getThumbnail(for: item) { _ in }
         
         // Trim old items
         while historyItems.count > maxHistoryCount {
@@ -56,6 +58,16 @@ final class HistoryManager {
     /// Get all history items
     func getHistory() -> [HistoryItem] {
         return historyItems
+    }
+    
+    /// Get thumbnail for a history item (async)
+    func getThumbnail(for item: HistoryItem, completion: @escaping (NSImage?) -> Void) {
+        ThumbnailCache.shared.getThumbnail(for: item, completion: completion)
+    }
+    
+    /// Prefetch thumbnails for visible items
+    func prefetchThumbnails(for items: [HistoryItem]) {
+        ThumbnailCache.shared.prefetchThumbnails(for: items)
     }
     
     /// Get full image for a history item
@@ -84,6 +96,7 @@ final class HistoryManager {
             try? FileManager.default.removeItem(at: item.fileURL)
         }
         historyItems.removeAll()
+        ThumbnailCache.shared.clearCache()
         saveHistoryMetadata()
     }
     
@@ -112,21 +125,15 @@ final class HistoryManager {
             return
         }
         
+        // Load metadata only - thumbnails will be loaded on demand
         historyItems = items.compactMap { metadata in
             let fileURL = historyDirectory.appendingPathComponent(metadata.filename)
             guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-            
-            // Load thumbnail
-            var thumbnail: NSImage?
-            if let image = NSImage(contentsOf: fileURL) {
-                thumbnail = createThumbnail(from: image)
-            }
             
             return HistoryItem(
                 id: metadata.id,
                 timestamp: metadata.timestamp,
                 fileURL: fileURL,
-                thumbnailImage: thumbnail,
                 captureRect: metadata.captureRect
             )
         }
@@ -154,7 +161,6 @@ struct HistoryItem: Identifiable {
     let id: UUID
     let timestamp: Date
     let fileURL: URL
-    let thumbnailImage: NSImage?
     let captureRect: CGRect
 }
 

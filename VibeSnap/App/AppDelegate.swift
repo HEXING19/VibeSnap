@@ -12,7 +12,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlayWindows: [OverlayWindow] = []
     private var annotationToolbar: AnnotationToolbar?
     private var thumbnailOverlay: ThumbnailOverlay?
-    private var historyPanel: HistoryPanel?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Initialize status bar
@@ -22,7 +21,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         createOverlayWindows()
         annotationToolbar = AnnotationToolbar()
         thumbnailOverlay = ThumbnailOverlay()
-        historyPanel = HistoryPanel()
         
         // Set up capture callbacks
         setupCaptureCallbacks()
@@ -70,10 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleCaptureArea),
             name: .captureArea, object: nil
         )
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleCaptureWindow),
-            name: .captureWindow, object: nil
-        )
+
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleCaptureFullscreen),
             name: .captureFullscreen, object: nil
@@ -96,9 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startAreaCapture()
     }
     
-    @objc private func handleCaptureWindow() {
-        startWindowCapture()
-    }
+
     
     @objc private func handleCaptureFullscreen() {
         startFullscreenCapture()
@@ -149,13 +142,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         
-        annotationToolbar?.onDone = { [weak self] in
-            // User finished annotating, show thumbnail
-            if let image = self?.annotationToolbar?.capturedImage,
-               let rect = self?.annotationToolbar?.capturedRect {
-                self?.showThumbnail(image: image, rect: rect)
-            }
-        }
+
         
         annotationToolbar?.onCancel = {
             // User cancelled, do nothing
@@ -191,9 +178,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.onCaptureArea = { [weak self] in
             self?.startAreaCapture()
         }
-        hotkeyManager.onCaptureWindow = { [weak self] in
-            self?.startWindowCapture()
-        }
+
         hotkeyManager.onCaptureFullscreen = { [weak self] in
             self?.startFullscreenCapture()
         }
@@ -207,7 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func showHistoryPanel() {
-        historyPanel?.show()
+        ScreenshotHistoryWindowController.shared.togglePanel()
     }
     
     private func showClipboardHistoryPanel() {
@@ -222,13 +207,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWindows.forEach { $0.startCapture(mode: .area) }
     }
     
-    private func startWindowCapture() {
-        guard permissionsManager.hasScreenCapturePermission else {
-            showPermissionAlert()
-            return
-        }
-        overlayWindows.forEach { $0.startCapture(mode: .window) }
-    }
+
     
     private func startFullscreenCapture() {
         guard permissionsManager.hasScreenCapturePermission else {

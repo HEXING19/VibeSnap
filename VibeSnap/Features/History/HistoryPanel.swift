@@ -91,6 +91,7 @@ class HistoryContentView: NSView {
         collectionView?.collectionViewLayout = flowLayout
         collectionView?.dataSource = self
         collectionView?.delegate = self
+        collectionView?.prefetchDataSource = self
         collectionView?.backgroundColors = [.clear]
         collectionView?.isSelectable = true
         collectionView?.allowsMultipleSelection = false
@@ -112,6 +113,11 @@ class HistoryContentView: NSView {
     func refreshHistory() {
         historyItems = HistoryManager.shared.getHistory()
         collectionView?.reloadData()
+        
+        // Prefetch thumbnails for first visible items
+        let visibleIndexPaths = collectionView?.indexPathsForVisibleItems() ?? []
+        let visibleItems = visibleIndexPaths.compactMap { historyItems[safe: $0.item] }
+        HistoryManager.shared.prefetchThumbnails(for: visibleItems)
     }
     
     @objc private func clearAllClicked() {
@@ -136,10 +142,26 @@ extension HistoryContentView: NSCollectionViewDataSource {
     
     func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
         let item = collectionView.makeItem(withIdentifier: NSUserInterfaceItemIdentifier("HistoryItemCell"), for: indexPath)
-        if let cell = item as? HistoryItemCell {
-            cell.configure(with: historyItems[indexPath.item])
+        if let cell = item as? HistoryItemCell, let historyItem = historyItems[safe: indexPath.item] {
+            cell.configure(with: historyItem)
         }
         return item
+    }
+}
+
+extension HistoryContentView: NSCollectionViewPrefetching {
+    @objc func collectionView(_ collectionView: NSCollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
+        let itemsToPrefetch = indexPaths.compactMap { historyItems[safe: $0.item] }
+        HistoryManager.shared.prefetchThumbnails(for: itemsToPrefetch)
+    }
+    
+    @objc func collectionView(_ collectionView: NSCollectionView, cancelPrefetchingForItemsAt indexPaths: [IndexPath]) {
+        // Cancel pending thumbnail loads
+        for indexPath in indexPaths {
+            if let item = historyItems[safe: indexPath.item] {
+                ThumbnailCache.shared.cancelRequest(for: item)
+            }
+        }
     }
 }
 
@@ -186,22 +208,49 @@ class HistoryItemCell: NSCollectionViewItem {
     func configure(with item: HistoryItem) {
         historyItem = item
         
-        // Use cached thumbnail first, don't load full image synchronously
-        if let thumbnail = item.thumbnailImage {
-            thumbnailView?.image = thumbnail
-        } else {
-            // Load thumbnail asynchronously
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let image = HistoryManager.shared.getImage(for: item)
-                DispatchQueue.main.async {
-                    self?.thumbnailView?.image = image
-                }
-            }
+        // Show placeholder immediately
+        thumbnailView?.image = createPlaceholderImage()
+        
+        // Load thumbnail asynchronously
+        HistoryManager.shared.getThumbnail(for: item) { [weak self] thumbnail in
+            guard let self = self, self.historyItem?.id == item.id else { return }
+            self.thumbnailView?.image = thumbnail ?? self.createPlaceholderImage()
         }
         
         let formatter = DateFormatter()
         formatter.dateFormat = "MM/dd HH:mm:ss"
         timestampLabel?.stringValue = formatter.string(from: item.timestamp)
+    }
+    
+    private func createPlaceholderImage() -> NSImage {
+        let size = NSSize(width: 160, height: 100)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        
+        // Draw gray background
+        NSColor.quaternaryLabelColor.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        
+        // Draw icon
+        let iconSize: CGFloat = 40
+        let iconRect = NSRect(
+            x: (size.width - iconSize) / 2,
+            y: (size.height - iconSize) / 2,
+            width: iconSize,
+            height: iconSize
+        )
+        
+        NSColor.tertiaryLabelColor.setFill()
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: iconRect.minX + 5, y: iconRect.maxY - 5))
+        path.line(to: NSPoint(x: iconRect.maxX - 5, y: iconRect.maxY - 5))
+        path.line(to: NSPoint(x: iconRect.maxX - 5, y: iconRect.minY + 5))
+        path.line(to: NSPoint(x: iconRect.minX + 5, y: iconRect.minY + 5))
+        path.close()
+        path.fill()
+        
+        image.unlockFocus()
+        return image
     }
     
     @objc private func handleDoubleClick() {
@@ -243,5 +292,13 @@ class HistoryItemCell: NSCollectionViewItem {
             view.layer?.borderWidth = isSelected ? 2 : 0
             view.layer?.borderColor = isSelected ? NSColor.controlAccentColor.cgColor : nil
         }
+    }
+}
+
+// MARK: - Array Extension for Safe Access
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        return indices.contains(index) ? self[index] : nil
     }
 }

@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import HotKey
 
 struct SettingsView: View {
     @AppStorage("autoSaveLocation") private var autoSaveLocation: String = "Desktop"
@@ -120,43 +122,155 @@ struct ClipboardSettingsView: View {
 }
 
 struct ShortcutsSettingsView: View {
+    @State private var recordingAction: String? = nil
+    @State private var refreshTrigger = false
+    
+    private let shortcuts: [(String, String)] = [
+        ("captureArea", "Capture Area"),
+        ("captureFullscreen", "Capture Fullscreen"),
+        ("showHistory", "Screenshot History"),
+        ("clipboardHistory", "Clipboard History"),
+    ]
+    
     var body: some View {
         Form {
             Section {
-                HStack {
-                    Text("Capture Area")
-                    Spacer()
-                    Text("⇧⌘1")
-                        .foregroundColor(.secondary)
+                ForEach(shortcuts, id: \.0) { action, label in
+                    HStack {
+                        Text(label)
+                        Spacer()
+                        ShortcutRecorderButton(
+                            action: action,
+                            isRecording: recordingAction == action,
+                            onStartRecording: {
+                                recordingAction = action
+                            },
+                            onStopRecording: {
+                                recordingAction = nil
+                                refreshTrigger.toggle()
+                            }
+                        )
+                    }
                 }
-                HStack {
-                    Text("Capture Window")
-                    Spacer()
-                    Text("⇧⌘2")
-                        .foregroundColor(.secondary)
-                }
-                HStack {
-                    Text("Capture Fullscreen")
-                    Spacer()
-                    Text("⇧⌘3")
-                        .foregroundColor(.secondary)
-                }
-                HStack {
-                    Text("Screenshot History")
-                    Spacer()
-                    Text("⇧⌘4")
-                        .foregroundColor(.secondary)
-                }
-                HStack {
-                    Text("Clipboard History")
-                    Spacer()
-                    Text("⇧⌘V")
-                        .foregroundColor(.secondary)
-                }
+            } header: {
+                Text("Click a shortcut to change it, then press your desired key combination.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .padding()
+        .id(refreshTrigger) // force refresh when shortcut changes
     }
 }
 
+/// A button that records keyboard shortcuts when clicked
+struct ShortcutRecorderButton: NSViewRepresentable {
+    let action: String
+    let isRecording: Bool
+    let onStartRecording: () -> Void
+    let onStopRecording: () -> Void
+    
+    func makeNSView(context: Context) -> ShortcutRecorderNSButton {
+        let button = ShortcutRecorderNSButton()
+        button.shortcutAction = action
+        button.onStartRecording = onStartRecording
+        button.onStopRecording = onStopRecording
+        button.updateDisplay()
+        return button
+    }
+    
+    func updateNSView(_ nsView: ShortcutRecorderNSButton, context: Context) {
+        nsView.shortcutAction = action
+        nsView.isRecordingMode = isRecording
+        nsView.onStartRecording = onStartRecording
+        nsView.onStopRecording = onStopRecording
+        nsView.updateDisplay()
+    }
+}
 
+class ShortcutRecorderNSButton: NSButton {
+    var shortcutAction: String = ""
+    var isRecordingMode = false
+    var onStartRecording: (() -> Void)?
+    var onStopRecording: (() -> Void)?
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        self.bezelStyle = .rounded
+        self.setButtonType(.momentaryPushIn)
+        self.target = self
+        self.action = #selector(buttonClicked)
+        self.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+    
+    override var acceptsFirstResponder: Bool { true }
+    
+    func updateDisplay() {
+        if isRecordingMode {
+            self.title = "Press keys..."
+            self.contentTintColor = .systemOrange
+        } else {
+            self.title = HotkeyManager.shared.shortcutDisplayString(for: self.shortcutAction)
+            self.contentTintColor = .labelColor
+        }
+    }
+    
+    @objc private func buttonClicked() {
+        if isRecordingMode {
+            isRecordingMode = false
+            onStopRecording?()
+        } else {
+            // Temporarily unregister hotkeys so we can capture the key combo
+            HotkeyManager.shared.unregisterHotkeys()
+            isRecordingMode = true
+            onStartRecording?()
+            self.window?.makeFirstResponder(self)
+        }
+        updateDisplay()
+    }
+    
+    override func keyDown(with event: NSEvent) {
+        guard isRecordingMode else {
+            super.keyDown(with: event)
+            return
+        }
+        
+        // Escape cancels recording
+        if event.keyCode == 53 {
+            isRecordingMode = false
+            onStopRecording?()
+            HotkeyManager.shared.registerHotkeys()
+            updateDisplay()
+            return
+        }
+        
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        
+        // Need at least one modifier key
+        guard modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.option) else {
+            return
+        }
+        
+        // Get the key from carbon key code
+        guard let key = Key(carbonKeyCode: UInt32(event.keyCode)) else { return }
+        
+        // Save the shortcut
+        HotkeyManager.shared.saveShortcut(
+            action: self.shortcutAction,
+            keyString: key.description.lowercased(),
+            modifiers: modifiers
+        )
+        
+        isRecordingMode = false
+        onStopRecording?()
+        updateDisplay()
+    }
+    
+    override func flagsChanged(with event: NSEvent) {
+        // Don't consume flag changes
+    }
+}

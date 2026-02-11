@@ -74,6 +74,48 @@ class FloatingPropertiesWindow: NSPanel {
     
     func updateForTool(_ tool: AnnotationTool) {
         propertiesView?.updateForTool(tool)
+        
+        // Calculate required width based on visible controls
+        let baseWidth: CGFloat = 24 // padding
+        let colorWellWidth: CGFloat = 28 + 12 // color well + spacing
+        let propertyWidth: CGFloat = 20 + 4 + 80 + 8 // icon + spacing + slider + spacing
+        let separatorWidth: CGFloat = 9
+        let fillButtonWidth: CGFloat = 28 + 8
+        
+        var totalWidth: CGFloat = 0
+        var hasProperties = true
+        
+        // Calculate width based on tool properties
+        switch tool {
+        case .rectangle:
+            totalWidth = baseWidth + colorWellWidth + propertyWidth * 3 + separatorWidth * 2 + fillButtonWidth
+            
+        case .ellipse:
+            totalWidth = baseWidth + colorWellWidth + propertyWidth * 2 + separatorWidth + fillButtonWidth
+            
+        case .line, .arrow, .freehand:
+            totalWidth = baseWidth + colorWellWidth + propertyWidth * 2 + separatorWidth
+            
+        case .text, .callout, .number:
+            // These tools can have 0 properties - hide the window
+            hasProperties = false
+            
+        case .mosaic, .magnifier, .highlighter, .blur:
+            // These tools can have 0 properties - hide the window
+            hasProperties = false
+        }
+        
+        // Show or hide window based on whether tool has properties
+        if hasProperties {
+            // Update window size and show
+            var frame = self.frame
+            frame.size.width = totalWidth
+            self.setFrame(frame, display: true, animate: false)
+            self.orderFront(nil)
+        } else {
+            // Hide window for tools with no properties
+            self.orderOut(nil)
+        }
     }
     
     func positionRelativeTo(window: NSWindow, offset: CGPoint = CGPoint(x: 0, y: 120)) {

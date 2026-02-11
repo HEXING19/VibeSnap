@@ -10,12 +10,27 @@ class FloatingToolbarWindow: NSPanel {
     var onRedo: (() -> Void)?
     var onCopy: (() -> Void)?
     var onSave: (() -> Void)?
-    var onDone: (() -> Void)?
+
     var onCancel: (() -> Void)?
     
     init() {
-        // Calculate size based on content
-        let toolbarWidth: CGFloat = 720  // Wide enough for 10 tools + controls + action buttons
+        // Calculate dynamic size based on content
+        let padding: CGFloat = 12
+        let buttonSize: CGFloat = 28
+        let spacing: CGFloat = 8
+        let separatorWidth: CGFloat = 9
+        
+        // 10 tool buttons
+        let toolsWidth = CGFloat(10) * buttonSize + CGFloat(9) * spacing
+        
+        // Color well + undo + redo
+        let controlsWidth = buttonSize + spacing + buttonSize + 4 + buttonSize + 4
+        
+        // Action buttons (Copy, Save, Cancel) - need spacing after last button too
+        let actionsWidth = buttonSize * 3 + spacing * 3  // Added extra spacing for right padding
+        
+        // Total width - balanced padding on both sides
+        let toolbarWidth = padding + toolsWidth + separatorWidth + controlsWidth + separatorWidth + actionsWidth + padding
         let toolbarHeight: CGFloat = 48
         
         super.init(
@@ -74,9 +89,7 @@ class FloatingToolbarWindow: NSPanel {
         toolsView?.onSave = { [weak self] in
             self?.onSave?()
         }
-        toolsView?.onDone = { [weak self] in
-            self?.onDone?()
-        }
+
         toolsView?.onCancel = { [weak self] in
             self?.onCancel?()
         }
@@ -106,7 +119,7 @@ class AnnotationToolsView: NSView {
     var onRedo: (() -> Void)?
     var onCopy: (() -> Void)?
     var onSave: (() -> Void)?
-    var onDone: (() -> Void)?
+
     var onCancel: (() -> Void)?
     
     private var toolButtons: [NSButton] = []
@@ -205,11 +218,10 @@ class AnnotationToolsView: NSView {
         addSubview(separator2)
         currentX += 9
         
-        // Action buttons: Copy, Save, Done, Cancel (icon-only)
+        // Action buttons: Copy, Save, Cancel (icon-only)
         let actionButtons: [(String, String, Int)] = [
             ("doc.on.doc", "Copy", -10),
             ("square.and.arrow.down", "Save", -11),
-            ("checkmark.circle", "Done", -12),
             ("xmark.circle", "Cancel", -13)
         ]
         
@@ -274,7 +286,6 @@ class AnnotationToolsView: NSView {
         switch sender.tag {
         case -10: onCopy?()
         case -11: onSave?()
-        case -12: onDone?()
         case -13: onCancel?()
         default: break
         }

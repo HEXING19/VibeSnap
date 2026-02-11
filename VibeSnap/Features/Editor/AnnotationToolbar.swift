@@ -12,7 +12,7 @@ class AnnotationToolbar: NSWindow {
     // Callbacks
     var onCopy: (() -> Void)?
     var onSave: (() -> Void)?
-    var onDone: (() -> Void)?
+
     var onCancel: (() -> Void)?
     
     init() {
@@ -35,6 +35,7 @@ class AnnotationToolbar: NSWindow {
         )
         
         setupWindow()
+        setupFloatingPanels()
     }
     
     private func setupWindow() {
@@ -44,7 +45,13 @@ class AnnotationToolbar: NSWindow {
         self.hasShadow = true
         self.collectionBehavior = [.canJoinAllSpaces, .transient]
         self.isReleasedWhenClosed = false
-        
+    }
+    
+    // Allow this borderless window to become key (needed for text input)
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+    
+    private func setupFloatingPanels() {
         // Create floating toolbar
         floatingToolbar = FloatingToolbarWindow()
         floatingToolbar?.onToolSelected = { [weak self] tool in
@@ -66,9 +73,7 @@ class AnnotationToolbar: NSWindow {
         floatingToolbar?.onSave = { [weak self] in
             self?.saveImage()
         }
-        floatingToolbar?.onDone = { [weak self] in
-            self?.done()
-        }
+
         floatingToolbar?.onCancel = { [weak self] in
             self?.cancel()
         }
@@ -200,10 +205,35 @@ class AnnotationToolbar: NSWindow {
     }
     
     private func updateFloatingWindowPositions() {
-        // Toolbar: 10px above main window
-        floatingToolbar?.positionRelativeTo(window: self, offset: CGPoint(x: 0, y: 10))
-        // Properties: 10px above toolbar (toolbar height 48px + 10px spacing = 68px)
-        floatingProperties?.positionRelativeTo(window: self, offset: CGPoint(x: 0, y: 68))
+        guard let screen = self.screen ?? NSScreen.main else { return }
+        let screenFrame = screen.visibleFrame
+        let windowFrame = self.frame
+        let toolbarHeight: CGFloat = 48
+        let propertiesHeight: CGFloat = 44
+        let spacing: CGFloat = 10
+        
+        // Check if toolbar would go off-screen above
+        let toolbarTopY = windowFrame.maxY + spacing + toolbarHeight
+        let propertiesTopY = toolbarTopY + spacing + propertiesHeight
+        
+        if propertiesTopY > screenFrame.maxY {
+            // Position below the main window instead
+            let toolbarY = windowFrame.minY - spacing - toolbarHeight
+            let propertiesY = toolbarY - spacing - propertiesHeight
+            
+            if let toolbar = floatingToolbar {
+                let toolbarX = windowFrame.midX - toolbar.frame.width / 2
+                toolbar.setFrameOrigin(CGPoint(x: toolbarX, y: toolbarY))
+            }
+            if let properties = floatingProperties {
+                let propertiesX = windowFrame.midX - properties.frame.width / 2
+                properties.setFrameOrigin(CGPoint(x: propertiesX, y: propertiesY))
+            }
+        } else {
+            // Default: position above the main window
+            floatingToolbar?.positionRelativeTo(window: self, offset: CGPoint(x: 0, y: spacing))
+            floatingProperties?.positionRelativeTo(window: self, offset: CGPoint(x: 0, y: spacing + toolbarHeight + spacing))
+        }
     }
     
     
@@ -252,10 +282,7 @@ class AnnotationToolbar: NSWindow {
         }
     }
     
-    func done() {
-        hide()
-        onDone?()
-    }
+
     
     func cancel() {
         hide()
