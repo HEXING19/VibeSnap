@@ -6,6 +6,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionsManager = PermissionsManager.shared
     private var hotkeyManager = HotkeyManager.shared
     private var captureManager = CaptureManager.shared
+    private var clipboardManager = ClipboardManager.shared
     
     // Capture UI
     private var overlayWindows: [OverlayWindow] = []
@@ -85,6 +86,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleShowSettings),
             name: .showSettings, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleShowClipboardHistory),
+            name: .showClipboardHistory, object: nil
+        )
     }
     
     @objc private func handleCaptureArea() {
@@ -105,6 +110,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func handleShowSettings() {
         SettingsWindowController.shared.showSettings()
+    }
+    
+    @objc private func handleShowClipboardHistory() {
+        showClipboardHistoryPanel()
     }
     
     private func setupCaptureCallbacks() {
@@ -191,11 +200,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.onShowHistory = { [weak self] in
             self?.showHistoryPanel()
         }
+        hotkeyManager.onShowClipboardHistory = { [weak self] in
+            self?.showClipboardHistoryPanel()
+        }
         hotkeyManager.registerHotkeys()
     }
     
     private func showHistoryPanel() {
         historyPanel?.show()
+    }
+    
+    private func showClipboardHistoryPanel() {
+        ClipboardHistoryWindowController.shared.togglePanel()
     }
     
     private func startAreaCapture() {

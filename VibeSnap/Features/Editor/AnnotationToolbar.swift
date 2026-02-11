@@ -5,7 +5,6 @@ class AnnotationToolbar: NSWindow {
     private var canvas: CanvasView?
     private var floatingToolbar: FloatingToolbarWindow?
     private var floatingProperties: FloatingPropertiesWindow?
-    private var actionBar: ActionButtonsBar?
     
     private(set) var capturedImage: NSImage?
     private(set) var capturedRect: CGRect = .zero
@@ -60,6 +59,18 @@ class AnnotationToolbar: NSWindow {
         }
         floatingToolbar?.onRedo = { [weak self] in
             self?.canvas?.redo()
+        }
+        floatingToolbar?.onCopy = { [weak self] in
+            self?.copyToClipboard()
+        }
+        floatingToolbar?.onSave = { [weak self] in
+            self?.saveImage()
+        }
+        floatingToolbar?.onDone = { [weak self] in
+            self?.done()
+        }
+        floatingToolbar?.onCancel = { [weak self] in
+            self?.cancel()
         }
         
         // Create floating properties panel
@@ -119,39 +130,15 @@ class AnnotationToolbar: NSWindow {
         contentView.layer?.addSublayer(backgroundLayer)
         
         // Create canvas
-        let actionBarHeight: CGFloat = 60
         let canvasFrame = CGRect(
             x: 0,
-            y: actionBarHeight,
+            y: 0,
             width: windowSize.width,
-            height: windowSize.height - actionBarHeight
+            height: windowSize.height
         )
         canvas = CanvasView(frame: canvasFrame, image: image)
         canvas?.autoresizingMask = [.width, .height]
         contentView.addSubview(canvas!)
-        
-        // Create action bar at bottom
-        let actionBarFrame = CGRect(
-            x: 0,
-            y: 0,
-            width: windowSize.width,
-            height: actionBarHeight
-        )
-        actionBar = ActionButtonsBar(frame: actionBarFrame)
-        actionBar?.autoresizingMask = [.width, .maxYMargin]
-        actionBar?.onCopy = { [weak self] in
-            self?.copyToClipboard()
-        }
-        actionBar?.onSave = { [weak self] in
-            self?.saveImage()
-        }
-        actionBar?.onDone = { [weak self] in
-            self?.done()
-        }
-        actionBar?.onCancel = { [weak self] in
-            self?.cancel()
-        }
-        contentView.addSubview(actionBar!)
         
         self.contentView = contentView
         
@@ -189,11 +176,10 @@ class AnnotationToolbar: NSWindow {
         }
         
         let screenSize = screen.visibleFrame.size
-        let actionBarHeight: CGFloat = 60
         
         // Max canvas size (80% of screen for better visibility with floating windows)
         let maxWidth = screenSize.width * 0.8
-        let maxHeight = screenSize.height * 0.8 - actionBarHeight
+        let maxHeight = screenSize.height * 0.8
         
         // Calculate scaled image size
         let imageSize = image.size
@@ -205,7 +191,7 @@ class AnnotationToolbar: NSWindow {
         
         return CGSize(
             width: canvasWidth,
-            height: canvasHeight + actionBarHeight
+            height: canvasHeight
         )
     }
     
@@ -283,11 +269,9 @@ class UnifiedAnnotationView: NSView {
     private var toolsToolbar: AnnotationToolsToolbar?
     private var propertiesPanel: ToolPropertiesPanel?
     private var canvas: CanvasView?
-    private var actionBar: ActionButtonsBar?
     
     private let toolbarHeight: CGFloat = 60
     private let propertiesPanelHeight: CGFloat = 44
-    private let actionBarHeight: CGFloat = 60
     
     init(frame frameRect: NSRect, toolbar: AnnotationToolbar, image: NSImage) {
         self.toolbar = toolbar
@@ -368,9 +352,9 @@ class UnifiedAnnotationView: NSView {
         // Middle canvas with image - with subtle border
         let canvasFrame = CGRect(
             x: 0,
-            y: actionBarHeight,
+            y: 0,
             width: bounds.width,
-            height: bounds.height - toolbarHeight - propertiesPanelHeight - actionBarHeight
+            height: bounds.height - toolbarHeight - propertiesPanelHeight
         )
         canvas = CanvasView(frame: canvasFrame, image: image)
         canvas?.autoresizingMask = [.width, .height]
@@ -378,17 +362,6 @@ class UnifiedAnnotationView: NSView {
         canvas?.layer?.borderWidth = 1
         canvas?.layer?.borderColor = NSColor(white: 0.2, alpha: 0.5).cgColor
         addSubview(canvas!)
-        
-        // Bottom action buttons
-        let actionBarFrame = CGRect(
-            x: 0,
-            y: 0,
-            width: bounds.width,
-            height: actionBarHeight
-        )
-        actionBar = ActionButtonsBar(frame: actionBarFrame, toolbar: toolbar)
-        actionBar?.autoresizingMask = [.width, .maxYMargin]
-        addSubview(actionBar!)
     }
     
     func getFinalImage() -> NSImage? {
@@ -678,13 +651,31 @@ class ToolPropertiesPanel: NSView {
         cornerRadiusSlider?.isHidden = true
         containerView?.addSubview(cornerRadiusSlider!)
         
-        // Fill Checkbox (icon style)
-        fillCheckbox = NSButton(frame: CGRect(x: xOffset, y: 9, width: 22, height: 22))
-        fillCheckbox?.setButtonType(.switch)
+        // Fill toggle button (icon-only, hidden by default)
+        let fillBtnSize: CGFloat = 28
+        fillCheckbox = NSButton(frame: CGRect(x: xOffset, y: (40 - fillBtnSize) / 2, width: fillBtnSize, height: fillBtnSize))
+        fillCheckbox?.setButtonType(.toggle)
+        fillCheckbox?.bezelStyle = .regularSquare
+        fillCheckbox?.isBordered = false
         fillCheckbox?.title = ""
         fillCheckbox?.target = self
         fillCheckbox?.action = #selector(fillChanged(_:))
         fillCheckbox?.isHidden = true
+        fillCheckbox?.toolTip = "填充"
+        fillCheckbox?.wantsLayer = true
+        fillCheckbox?.layer?.cornerRadius = 6
+        
+        // Use unfilled square icon (will toggle visually)
+        if let img = NSImage(systemSymbolName: "square", accessibilityDescription: "填充") {
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            fillCheckbox?.image = img.withSymbolConfiguration(config)
+        }
+        if let altImg = NSImage(systemSymbolName: "square.fill", accessibilityDescription: "取消填充") {
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            fillCheckbox?.alternateImage = altImg.withSymbolConfiguration(config)
+        }
+        fillCheckbox?.imagePosition = .imageOnly
+        fillCheckbox?.contentTintColor = NSColor(white: 0.25, alpha: 1.0)
         containerView?.addSubview(fillCheckbox!)
         
         // Update visibility for default tool

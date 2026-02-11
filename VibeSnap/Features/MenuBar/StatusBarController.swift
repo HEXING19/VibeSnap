@@ -7,6 +7,7 @@ extension Notification.Name {
     static let captureWindow = Notification.Name("com.vibesnap.captureWindow")
     static let captureFullscreen = Notification.Name("com.vibesnap.captureFullscreen")
     static let showHistory = Notification.Name("com.vibesnap.showHistory")
+    static let showClipboardHistory = Notification.Name("com.vibesnap.showClipboardHistory")
     static let showSettings = Notification.Name("com.vibesnap.showSettings")
 }
 
@@ -65,11 +66,17 @@ class StatusBarController {
         
         menu.addItem(NSMenuItem.separator())
         
-        // History
-        let historyItem = NSMenuItem(title: "History", action: #selector(showHistory), keyEquivalent: "4")
+        // Screenshot History
+        let historyItem = NSMenuItem(title: "Screenshot History", action: #selector(showHistory), keyEquivalent: "4")
         historyItem.keyEquivalentModifierMask = [.shift, .command]
         historyItem.target = self
         menu.addItem(historyItem)
+        
+        // Clipboard History
+        let clipboardHistoryItem = NSMenuItem(title: "Clipboard History", action: #selector(showClipboardHistory), keyEquivalent: "V")
+        clipboardHistoryItem.keyEquivalentModifierMask = [.shift, .command]
+        clipboardHistoryItem.target = self
+        menu.addItem(clipboardHistoryItem)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -106,6 +113,10 @@ class StatusBarController {
     
     @objc private func showHistory() {
         NotificationCenter.default.post(name: .showHistory, object: nil)
+    }
+    
+    @objc private func showClipboardHistory() {
+        NotificationCenter.default.post(name: .showClipboardHistory, object: nil)
     }
     
     @objc private func openSettings() {

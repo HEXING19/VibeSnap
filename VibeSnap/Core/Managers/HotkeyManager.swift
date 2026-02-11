@@ -10,12 +10,14 @@ final class HotkeyManager {
     private var captureWindowHotKey: HotKey?
     private var captureFullscreenHotKey: HotKey?
     private var showHistoryHotKey: HotKey?
+    private var showClipboardHistoryHotKey: HotKey?
     
     // Callbacks for capture actions
     var onCaptureArea: (() -> Void)?
     var onCaptureWindow: (() -> Void)?
     var onCaptureFullscreen: (() -> Void)?
     var onShowHistory: (() -> Void)?
+    var onShowClipboardHistory: (() -> Void)?
     
     private init() {}
     
@@ -44,6 +46,12 @@ final class HotkeyManager {
         showHistoryHotKey?.keyDownHandler = { [weak self] in
             self?.onShowHistory?()
         }
+        
+        // ⇧⌘V - Show Clipboard History
+        showClipboardHistoryHotKey = HotKey(key: .v, modifiers: [.shift, .command])
+        showClipboardHistoryHotKey?.keyDownHandler = { [weak self] in
+            self?.onShowClipboardHistory?()
+        }
     }
     
     /// Unregister all global hotkeys
@@ -52,6 +60,7 @@ final class HotkeyManager {
         captureWindowHotKey = nil
         captureFullscreenHotKey = nil
         showHistoryHotKey = nil
+        showClipboardHistoryHotKey = nil
     }
     
     deinit {

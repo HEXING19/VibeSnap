@@ -201,20 +201,32 @@ class ToolPropertiesView: NSView {
         addSubview(cornerRadiusSlider)
         self.cornerRadiusSlider = cornerRadiusSlider
         
-        // Fill checkbox (hidden by default)
-        let fillCheckbox = NSButton(frame: NSRect(x: currentX, y: (frame.height - 20) / 2, width: 60, height: 20))
-        fillCheckbox.setButtonType(.switch)
+        // Fill toggle button (icon-only, hidden by default)
+        let btnSize: CGFloat = 28
+        let fillCheckbox = NSButton(frame: NSRect(x: currentX, y: (frame.height - btnSize) / 2, width: btnSize, height: btnSize))
+        fillCheckbox.setButtonType(.toggle)
+        fillCheckbox.bezelStyle = .regularSquare
+        fillCheckbox.isBordered = false
         fillCheckbox.title = ""
         fillCheckbox.state = .off
         fillCheckbox.target = self
         fillCheckbox.action = #selector(fillChanged(_:))
         fillCheckbox.isHidden = true
+        fillCheckbox.toolTip = "填充"
+        fillCheckbox.wantsLayer = true
+        fillCheckbox.layer?.cornerRadius = 6
         
-        // Add fill icon
-        let fillIcon = NSImageView(frame: NSRect(x: 0, y: 0, width: iconSize, height: iconSize))
-        fillIcon.image = NSImage(systemSymbolName: "paintbrush.fill", accessibilityDescription: nil)
-        fillIcon.contentTintColor = NSColor(white: 0.3, alpha: 1.0)
-        fillCheckbox.addSubview(fillIcon)
+        // Use unfilled square icon (will toggle visually)
+        if let img = NSImage(systemSymbolName: "square", accessibilityDescription: "填充") {
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            fillCheckbox.image = img.withSymbolConfiguration(config)
+        }
+        if let altImg = NSImage(systemSymbolName: "square.fill", accessibilityDescription: "取消填充") {
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            fillCheckbox.alternateImage = altImg.withSymbolConfiguration(config)
+        }
+        fillCheckbox.imagePosition = .imageOnly
+        fillCheckbox.contentTintColor = NSColor(white: 0.25, alpha: 1.0)
         
         addSubview(fillCheckbox)
         self.fillCheckbox = fillCheckbox

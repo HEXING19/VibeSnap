@@ -8,10 +8,14 @@ class FloatingToolbarWindow: NSPanel {
     var onColorChanged: ((NSColor) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
+    var onCopy: (() -> Void)?
+    var onSave: (() -> Void)?
+    var onDone: (() -> Void)?
+    var onCancel: (() -> Void)?
     
     init() {
         // Calculate size based on content
-        let toolbarWidth: CGFloat = 580  // Wide enough for 10 tools + controls
+        let toolbarWidth: CGFloat = 720  // Wide enough for 10 tools + controls + action buttons
         let toolbarHeight: CGFloat = 48
         
         super.init(
@@ -64,6 +68,18 @@ class FloatingToolbarWindow: NSPanel {
         toolsView?.onRedo = { [weak self] in
             self?.onRedo?()
         }
+        toolsView?.onCopy = { [weak self] in
+            self?.onCopy?()
+        }
+        toolsView?.onSave = { [weak self] in
+            self?.onSave?()
+        }
+        toolsView?.onDone = { [weak self] in
+            self?.onDone?()
+        }
+        toolsView?.onCancel = { [weak self] in
+            self?.onCancel?()
+        }
         
         visualEffect.addSubview(toolsView!)
     }
@@ -88,6 +104,10 @@ class AnnotationToolsView: NSView {
     var onColorChanged: ((NSColor) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
+    var onCopy: (() -> Void)?
+    var onSave: (() -> Void)?
+    var onDone: (() -> Void)?
+    var onCancel: (() -> Void)?
     
     private var toolButtons: [NSButton] = []
     private var selectedToolIndex: Int = 0
@@ -176,6 +196,35 @@ class AnnotationToolsView: NSView {
         redoButton.target = self
         redoButton.action = #selector(redoClicked)
         addSubview(redoButton)
+        currentX += buttonSize + 4
+        
+        // Add separator before action buttons
+        currentX += 4
+        let separator2 = NSBox(frame: NSRect(x: currentX, y: 8, width: 1, height: frame.height - 16))
+        separator2.boxType = .separator
+        addSubview(separator2)
+        currentX += 9
+        
+        // Action buttons: Copy, Save, Done, Cancel (icon-only)
+        let actionButtons: [(String, String, Int)] = [
+            ("doc.on.doc", "Copy", -10),
+            ("square.and.arrow.down", "Save", -11),
+            ("checkmark.circle", "Done", -12),
+            ("xmark.circle", "Cancel", -13)
+        ]
+        
+        for (icon, tooltip, tag) in actionButtons {
+            let actionBtn = createToolButton(
+                icon: icon,
+                tag: tag,
+                frame: NSRect(x: currentX, y: (frame.height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+            )
+            actionBtn.target = self
+            actionBtn.action = #selector(actionButtonClicked(_:))
+            actionBtn.toolTip = tooltip
+            addSubview(actionBtn)
+            currentX += buttonSize + spacing
+        }
         
         // Select first tool by default
         selectTool(.rectangle)
@@ -219,6 +268,16 @@ class AnnotationToolsView: NSView {
     
     @objc private func redoClicked() {
         onRedo?()
+    }
+    
+    @objc private func actionButtonClicked(_ sender: NSButton) {
+        switch sender.tag {
+        case -10: onCopy?()
+        case -11: onSave?()
+        case -12: onDone?()
+        case -13: onCancel?()
+        default: break
+        }
     }
     
     func selectTool(_ tool: AnnotationTool) {
