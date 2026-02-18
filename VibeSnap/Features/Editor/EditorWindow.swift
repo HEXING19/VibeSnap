@@ -602,45 +602,69 @@ class MosaicAnnotation: Annotation {
     }
 }
 
-/// Magnifier annotation
+/// Magnifier annotation - circle centered at startPoint, radius from startPoint to endPoint
 class MagnifierAnnotation: Annotation {
     var zoomLevel: CGFloat = 2.0
     var borderWidth: CGFloat = 3
     var sourceImage: CGImage?
     
+    // The radius of the magnifier circle (set from drag distance)
+    var radius: CGFloat = 60
+    
     override func draw(in context: CGContext) {
         guard let source = sourceImage else { return }
+        
+        // Center is startPoint, radius is either from drag or default
+        let center = startPoint
+        let r = radius
+        let circleRect = CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)
         
         context.saveGState()
         context.setAlpha(opacity)
         
-        let rect = getRect()
-        let radius = min(rect.width, rect.height) / 2
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        
-        // Create circular clip
-        context.addEllipse(in: rect)
+        // Clip to circle
+        context.addEllipse(in: circleRect)
         context.clip()
         
-        // Calculate source rect (smaller area to zoom in)
-        let sourceSize = CGSize(width: rect.width / zoomLevel, height: rect.height / zoomLevel)
+        // The source region to zoom: centered at startPoint, size = circle / zoomLevel
+        let sourceW = (r * 2) / zoomLevel
+        let sourceH = (r * 2) / zoomLevel
         let sourceRect = CGRect(
-            x: center.x - sourceSize.width / 2,
-            y: center.y - sourceSize.height / 2,
-            width: sourceSize.width,
-            height: sourceSize.height
+            x: center.x - sourceW / 2,
+            y: center.y - sourceH / 2,
+            width: sourceW,
+            height: sourceH
         )
         
-        // Draw zoomed portion
-        context.draw(source, in: rect)
+        // Draw the full source image scaled so that sourceRect fills circleRect
+        // We do this by translating and scaling the context
+        let scaleX = circleRect.width / sourceRect.width
+        let scaleY = circleRect.height / sourceRect.height
+        context.translateBy(x: circleRect.minX - sourceRect.minX * scaleX,
+                            y: circleRect.minY - sourceRect.minY * scaleY)
+        context.scaleBy(x: scaleX, y: scaleY)
+        
+        let imageSize = CGSize(width: CGFloat(source.width), height: CGFloat(source.height))
+        context.draw(source, in: CGRect(origin: .zero, size: imageSize))
         
         context.restoreGState()
         
-        // Draw border
+        // Draw border circle
         context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(borderWidth)
-        context.strokeEllipse(in: rect.insetBy(dx: borderWidth / 2, dy: borderWidth / 2))
+        context.strokeEllipse(in: circleRect.insetBy(dx: borderWidth / 2, dy: borderWidth / 2))
+        
+        // Draw crosshair at center to show zoom origin
+        let crossSize: CGFloat = 8
+        context.setLineWidth(1.5)
+        context.setStrokeColor(color.withAlphaComponent(0.7).cgColor)
+        context.move(to: CGPoint(x: center.x - crossSize, y: center.y))
+        context.addLine(to: CGPoint(x: center.x + crossSize, y: center.y))
+        context.move(to: CGPoint(x: center.x, y: center.y - crossSize))
+        context.addLine(to: CGPoint(x: center.x, y: center.y + crossSize))
+        context.strokePath()
+        
         context.restoreGState()
     }
 }

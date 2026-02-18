@@ -89,9 +89,6 @@ class AnnotationToolbar: NSWindow {
         floatingProperties?.onCornerRadiusChanged = { [weak self] radius in
             self?.canvas?.setCornerRadius(radius)
         }
-        floatingProperties?.onColorChanged = { [weak self] color in
-            self?.canvas?.setColor(color)
-        }
         floatingProperties?.onFilledChanged = { [weak self] filled in
             self?.canvas?.setFilled(filled)
         }
@@ -147,27 +144,35 @@ class AnnotationToolbar: NSWindow {
         
         self.contentView = contentView
         
-        // Show floating windows
-        floatingToolbar?.makeKeyAndOrderFront(nil)
-        floatingProperties?.makeKeyAndOrderFront(nil)
-        
-        // Position floating windows
-        updateFloatingWindowPositions()
-        
-        // Select default tool
+        // Select default tool (rectangle - has properties)
         floatingToolbar?.selectTool(.rectangle)
-        floatingProperties?.updateForTool(.rectangle)
         canvas?.currentTool = .rectangle
         
-        // Animate in
+        // Position floating windows before showing them
+        updateFloatingWindowPositions()
+        
+        // CRITICAL: Activate the app FIRST before showing any window.
+        // After a screenshot, the previous app is still active. Panels will
+        // not display properly until the app is activated.
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Animate in - set alpha to 0 before showing
         self.alphaValue = 0
         floatingToolbar?.alphaValue = 0
         floatingProperties?.alphaValue = 0
         
+        // Show main window first (it must be key for text input to work)
         self.makeKeyAndOrderFront(nil)
         
+        // Show floating toolbar immediately (always visible)
+        floatingToolbar?.orderFront(nil)
+        
+        // Update properties for default tool and show if applicable
+        floatingProperties?.updateForTool(.rectangle)
+        // Properties window visibility is managed by updateForTool
+        
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.3
+            context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             self.animator().alphaValue = 1
             self.floatingToolbar?.animator().alphaValue = 1
@@ -208,18 +213,21 @@ class AnnotationToolbar: NSWindow {
         guard let screen = self.screen ?? NSScreen.main else { return }
         let screenFrame = screen.visibleFrame
         let windowFrame = self.frame
-        let toolbarHeight: CGFloat = 48
-        let propertiesHeight: CGFloat = 44
-        let spacing: CGFloat = 10
+        let toolbarHeight = FloatingToolbarWindow.totalHeight
+        let propertiesHeight = FloatingPropertiesWindow.totalHeight
+        let spacing: CGFloat = 4  // Reduced spacing since the arrow provides visual connection
         
         // Check if toolbar would go off-screen above
         let toolbarTopY = windowFrame.maxY + spacing + toolbarHeight
         let propertiesTopY = toolbarTopY + spacing + propertiesHeight
         
         if propertiesTopY > screenFrame.maxY {
-            // Position below the main window instead
+            // Position below the main window instead — arrows point UP
             let toolbarY = windowFrame.minY - spacing - toolbarHeight
             let propertiesY = toolbarY - spacing - propertiesHeight
+            
+            floatingToolbar?.setArrowDirection(.up)
+            floatingProperties?.setArrowDirection(.up)
             
             if let toolbar = floatingToolbar {
                 let toolbarX = windowFrame.midX - toolbar.frame.width / 2
@@ -230,7 +238,10 @@ class AnnotationToolbar: NSWindow {
                 properties.setFrameOrigin(CGPoint(x: propertiesX, y: propertiesY))
             }
         } else {
-            // Default: position above the main window
+            // Default: position above the main window — arrows point DOWN
+            floatingToolbar?.setArrowDirection(.down)
+            floatingProperties?.setArrowDirection(.down)
+            
             floatingToolbar?.positionRelativeTo(window: self, offset: CGPoint(x: 0, y: spacing))
             floatingProperties?.positionRelativeTo(window: self, offset: CGPoint(x: 0, y: spacing + toolbarHeight + spacing))
         }

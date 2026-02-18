@@ -1,23 +1,28 @@
 import AppKit
 
-/// Floating properties panel window with macOS-style glassmorphism
+/// Floating properties panel window with macOS-style callout appearance
 class FloatingPropertiesWindow: NSPanel {
     private var propertiesView: ToolPropertiesView?
+    private var calloutBackground: CalloutBackgroundView?
+    private var visualEffectView: NSVisualEffectView?
+    
+    static let arrowHeight: CGFloat = 8
+    static let contentHeight: CGFloat = 44
+    static let totalHeight: CGFloat = contentHeight + arrowHeight
     
     var onLineWidthChanged: ((CGFloat) -> Void)?
     var onOpacityChanged: ((CGFloat) -> Void)?
     var onCornerRadiusChanged: ((CGFloat) -> Void)?
-    var onColorChanged: ((NSColor) -> Void)?
     var onFilledChanged: ((Bool) -> Void)?
     
     init() {
         // Calculate size based on content
         let panelWidth: CGFloat = 420
-        let panelHeight: CGFloat = 44
+        let panelHeight = FloatingPropertiesWindow.totalHeight
         
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
-            styleMask: [.nonactivatingPanel, .hudWindow],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -33,26 +38,34 @@ class FloatingPropertiesWindow: NSPanel {
         self.hasShadow = true
         self.isMovableByWindowBackground = true
         self.collectionBehavior = [.canJoinAllSpaces, .transient, .fullScreenAuxiliary]
+        self.becomesKeyOnlyIfNeeded = true
         
-        // Create visual effect view for glassmorphism
-        let visualEffect = NSVisualEffectView(frame: contentView!.bounds)
+        // Create callout background view (fills the entire window)
+        let calloutBg = CalloutBackgroundView(frame: contentView!.bounds)
+        calloutBg.autoresizingMask = [.width, .height]
+        calloutBg.arrowDirection = .down
+        contentView?.addSubview(calloutBg)
+        self.calloutBackground = calloutBg
+        
+        // Create visual effect view for glassmorphism, placed inside callout
+        let visualEffect = NSVisualEffectView(frame: calloutBg.bounds)
         visualEffect.autoresizingMask = [.width, .height]
         visualEffect.material = .hudWindow
         visualEffect.state = .active
         visualEffect.blendingMode = .behindWindow
         visualEffect.wantsLayer = true
-        visualEffect.layer?.cornerRadius = 12
-        visualEffect.layer?.masksToBounds = true
+        calloutBg.addSubview(visualEffect)
+        self.visualEffectView = visualEffect
         
-        // Add subtle border
-        visualEffect.layer?.borderWidth = 0.5
-        visualEffect.layer?.borderColor = NSColor(white: 0.0, alpha: 0.1).cgColor
-        
-        contentView?.addSubview(visualEffect)
-        
-        // Create properties view
-        propertiesView = ToolPropertiesView(frame: visualEffect.bounds)
-        propertiesView?.autoresizingMask = [.width, .height]
+        // Create properties view positioned in the content area (above the arrow)
+        let propsFrame = NSRect(
+            x: 0,
+            y: FloatingPropertiesWindow.arrowHeight,
+            width: contentView!.bounds.width,
+            height: FloatingPropertiesWindow.contentHeight
+        )
+        propertiesView = ToolPropertiesView(frame: propsFrame)
+        propertiesView?.autoresizingMask = [.width]
         propertiesView?.onLineWidthChanged = { [weak self] width in
             self?.onLineWidthChanged?(width)
         }
@@ -62,14 +75,11 @@ class FloatingPropertiesWindow: NSPanel {
         propertiesView?.onCornerRadiusChanged = { [weak self] radius in
             self?.onCornerRadiusChanged?(radius)
         }
-        propertiesView?.onColorChanged = { [weak self] color in
-            self?.onColorChanged?(color)
-        }
         propertiesView?.onFilledChanged = { [weak self] filled in
             self?.onFilledChanged?(filled)
         }
         
-        visualEffect.addSubview(propertiesView!)
+        calloutBg.addSubview(propertiesView!)
     }
     
     func updateForTool(_ tool: AnnotationTool) {
@@ -77,7 +87,6 @@ class FloatingPropertiesWindow: NSPanel {
         
         // Calculate required width based on visible controls
         let baseWidth: CGFloat = 24 // padding
-        let colorWellWidth: CGFloat = 28 + 12 // color well + spacing
         let propertyWidth: CGFloat = 20 + 4 + 80 + 8 // icon + spacing + slider + spacing
         let separatorWidth: CGFloat = 9
         let fillButtonWidth: CGFloat = 28 + 8
@@ -88,20 +97,20 @@ class FloatingPropertiesWindow: NSPanel {
         // Calculate width based on tool properties
         switch tool {
         case .rectangle:
-            totalWidth = baseWidth + colorWellWidth + propertyWidth * 3 + separatorWidth * 2 + fillButtonWidth
+            totalWidth = baseWidth + propertyWidth * 3 + separatorWidth * 2 + fillButtonWidth
             
         case .ellipse:
-            totalWidth = baseWidth + colorWellWidth + propertyWidth * 2 + separatorWidth + fillButtonWidth
+            totalWidth = baseWidth + propertyWidth * 2 + separatorWidth + fillButtonWidth
             
         case .line, .arrow, .freehand:
-            totalWidth = baseWidth + colorWellWidth + propertyWidth * 2 + separatorWidth
+            totalWidth = baseWidth + propertyWidth * 2 + separatorWidth
             
         case .text, .callout, .number:
-            // These tools can have 0 properties - hide the window
+            // These tools have no properties - hide the window
             hasProperties = false
             
         case .mosaic, .magnifier, .highlighter, .blur:
-            // These tools can have 0 properties - hide the window
+            // These tools have no properties - hide the window
             hasProperties = false
         }
         
@@ -115,6 +124,20 @@ class FloatingPropertiesWindow: NSPanel {
         } else {
             // Hide window for tools with no properties
             self.orderOut(nil)
+        }
+    }
+    
+    func setArrowDirection(_ direction: CalloutArrowDirection) {
+        calloutBackground?.arrowDirection = direction
+        
+        // Reposition properties view based on arrow direction
+        let arrowH = FloatingPropertiesWindow.arrowHeight
+        let contentH = FloatingPropertiesWindow.contentHeight
+        switch direction {
+        case .down:
+            propertiesView?.frame = NSRect(x: 0, y: arrowH, width: frame.width, height: contentH)
+        case .up:
+            propertiesView?.frame = NSRect(x: 0, y: 0, width: frame.width, height: contentH)
         }
     }
     
@@ -133,10 +156,8 @@ class ToolPropertiesView: NSView {
     var onLineWidthChanged: ((CGFloat) -> Void)?
     var onOpacityChanged: ((CGFloat) -> Void)?
     var onCornerRadiusChanged: ((CGFloat) -> Void)?
-    var onColorChanged: ((NSColor) -> Void)?
     var onFilledChanged: ((Bool) -> Void)?
     
-    private var colorWell: NSColorWell?
     private var lineWidthSlider: NSSlider?
     private var opacitySlider: NSSlider?
     private var cornerRadiusSlider: NSSlider?
@@ -166,16 +187,6 @@ class ToolPropertiesView: NSView {
         let sliderWidth: CGFloat = 80
         let spacing: CGFloat = 8
         var currentX = padding
-        
-        // Color well
-        let colorWell = NSColorWell(frame: NSRect(x: currentX, y: (frame.height - 28) / 2, width: 28, height: 28))
-        colorWell.color = .systemRed
-        colorWell.isBordered = false
-        colorWell.target = self
-        colorWell.action = #selector(colorChanged(_:))
-        addSubview(colorWell)
-        self.colorWell = colorWell
-        currentX += 28 + spacing + 4
         
         // Line width icon + slider
         let lineWidthIcon = NSImageView(frame: NSRect(x: currentX, y: (frame.height - iconSize) / 2, width: iconSize, height: iconSize))
@@ -272,10 +283,6 @@ class ToolPropertiesView: NSView {
         
         addSubview(fillCheckbox)
         self.fillCheckbox = fillCheckbox
-    }
-    
-    @objc private func colorChanged(_ sender: NSColorWell) {
-        onColorChanged?(sender.color)
     }
     
     @objc private func lineWidthChanged(_ sender: NSSlider) {

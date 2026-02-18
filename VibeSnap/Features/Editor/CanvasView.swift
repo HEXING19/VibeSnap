@@ -1,5 +1,11 @@
 import AppKit
 
+/// Custom NSPanel subclass that can become key window (required for keyboard input)
+class TextInputPanel: NSPanel {
+    override var canBecomeKey: Bool { return true }
+    override var acceptsFirstResponder: Bool { return true }
+}
+
 /// Canvas view for drawing annotations on the screenshot
 class CanvasView: NSView, NSTextFieldDelegate {
     private var originalImage: NSImage
@@ -20,8 +26,10 @@ class CanvasView: NSView, NSTextFieldDelegate {
     // Number tool counter
     private var numberCounter: Int = 1
     
-    // Text input field for text tool
-    private var textField: NSTextField?
+    // Text input panel
+    private var textInputPanel: TextInputPanel?
+    private var textInputTag: Int = 0  // 1 = text, 2 = callout
+    private var textInputLocation: CGPoint = .zero
     
     // Callback for property changes
     var onPropertiesNeeded: ((AnnotationTool) -> Void)?
@@ -36,6 +44,11 @@ class CanvasView: NSView, NSTextFieldDelegate {
         self.originalImage = NSImage()
         super.init(coder: coder)
         setupView()
+    }
+    
+    // Allow first mouse click to activate this window (important after screenshot)
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
     }
     
     private func setupView() {
@@ -194,6 +207,7 @@ class CanvasView: NSView, NSTextFieldDelegate {
             applyCurrentProperties(to: annotation)
             annotation.startPoint = location
             annotation.endPoint = location
+            annotation.radius = 60  // default radius, updated on drag
             if let cgImage = originalImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                 annotation.sourceImage = cgImage
             }
@@ -223,6 +237,11 @@ class CanvasView: NSView, NSTextFieldDelegate {
             highlighter.points.append(location)
         } else if let freehand = currentAnnotation as? FreehandAnnotation {
             freehand.points.append(location)
+        } else if let magnifier = currentAnnotation as? MagnifierAnnotation {
+            // Drag sets the radius of the magnifier circle
+            let dx = location.x - magnifier.startPoint.x
+            let dy = location.y - magnifier.startPoint.y
+            magnifier.radius = max(30, sqrt(dx * dx + dy * dy))
         } else {
             currentAnnotation?.endPoint = location
         }
@@ -242,147 +261,131 @@ class CanvasView: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
     
-    // MARK: - Text Input
+    // MARK: - Text Input (NSPanel popup)
     
-    private func showTextInput(at location: CGPoint) {
-        // Remove any existing text field
-        textField?.removeFromSuperview()
-        textField = nil
-        
-        // Create text field at the clicked location
-        textField = NSTextField(frame: CGRect(x: location.x, y: location.y - 12, width: 200, height: 24))
-        textField?.isBordered = true
-        textField?.backgroundColor = .white
-        textField?.font = .systemFont(ofSize: 18)
-        textField?.focusRingType = .none
-        textField?.delegate = self
-        textField?.target = self
-        textField?.action = #selector(textInputComplete)
-        textField?.isEditable = true
-        textField?.isSelectable = true
-        textField?.placeholderString = "输入文字..."
-        
-        // Store the location for later use
-        textField?.tag = 1  // Mark as text tool
-        
-        addSubview(textField!)
-        
-        // CRITICAL FIX: Ensure the editor window becomes key and the text field gets focus
-        // This prevents keyboard input from going to the previous window
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, let field = self.textField, let window = self.window else { return }
-            
-            // Force app activation and window focus
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            window.makeKey()
-            
-            // Give focus to the text field
-            window.makeFirstResponder(field)
-            
-            // Double-check that the field has focus
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak field, weak window] in
-                if let field = field, let window = window {
-                    window.makeFirstResponder(field)
-                }
-            }
-        }
+    /// Remove any existing text input panel
+    private func removeTextInput() {
+        textInputPanel?.close()
+        textInputPanel = nil
+        textInputTag = 0
     }
     
-    @objc private func textInputComplete() {
-        guard let field = textField, !field.stringValue.isEmpty else {
-            textField?.removeFromSuperview()
-            textField = nil
-            return
-        }
-        
-        let annotation = TextAnnotation()
-        annotation.color = currentColor
-        annotation.text = field.stringValue
-        annotation.startPoint = CGPoint(x: field.frame.origin.x, y: field.frame.origin.y + 12)
-        
-        // Save state for undo
-        undoStack.append(annotations)
-        redoStack.removeAll()
-        
-        annotations.append(annotation)
-        
-        textField?.removeFromSuperview()
-        textField = nil
-        needsDisplay = true
+    private func showTextInput(at location: CGPoint) {
+        removeTextInput()
+        textInputTag = 1
+        textInputLocation = location
+        showTextInputPanel(at: location, placeholder: "输入文字...", fontSize: 18)
     }
     
     private func showCalloutInput(at location: CGPoint) {
-        // Remove any existing text field
-        textField?.removeFromSuperview()
-        textField = nil
-        
-        // Create a larger text field for callout
-        textField = NSTextField(frame: CGRect(x: location.x, y: location.y - 12, width: 150, height: 60))
-        textField?.isBordered = true
-        textField?.backgroundColor = .white
-        textField?.font = .systemFont(ofSize: 14)
-        textField?.focusRingType = .none
-        textField?.delegate = self
-        textField?.target = self
-        textField?.action = #selector(calloutInputComplete)
-        textField?.isEditable = true
-        textField?.isSelectable = true
-        textField?.placeholderString = "输入标注文字..."
-        
-        // Store the location for later use
-        textField?.tag = 2  // Mark as callout tool
-        
-        addSubview(textField!)
-        
-        // CRITICAL FIX: Ensure the editor window becomes key and the text field gets focus
-        // This prevents keyboard input from going to the previous window
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, let field = self.textField, let window = self.window else { return }
-            
-            // Force app activation and window focus
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            window.makeKey()
-            
-            // Give focus to the text field
-            window.makeFirstResponder(field)
-            
-            // Double-check that the field has focus
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak field, weak window] in
-                if let field = field, let window = window {
-                    window.makeFirstResponder(field)
-                }
-            }
-        }
+        removeTextInput()
+        textInputTag = 2
+        textInputLocation = location
+        showTextInputPanel(at: location, placeholder: "输入标注...", fontSize: 14)
     }
     
-    @objc private func calloutInputComplete() {
-        guard let field = textField, !field.stringValue.isEmpty else {
-            textField?.removeFromSuperview()
-            textField = nil
+    private func showTextInputPanel(at location: CGPoint, placeholder: String, fontSize: CGFloat) {
+        guard let mainWindow = self.window else { return }
+        
+        // Convert canvas location to screen coordinates
+        let windowPoint = convert(location, to: nil)
+        let screenPoint = mainWindow.convertPoint(toScreen: windowPoint)
+        
+        let panelWidth: CGFloat = 220
+        let panelHeight: CGFloat = 36
+        let panelRect = NSRect(
+            x: screenPoint.x,
+            y: screenPoint.y - panelHeight,
+            width: panelWidth,
+            height: panelHeight
+        )
+        
+        // Create a TextInputPanel (custom subclass that can become key)
+        let panel = TextInputPanel(
+            contentRect: panelRect,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .floating + 1
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.isReleasedWhenClosed = false
+        
+        // Background view
+        let bg = NSView(frame: NSRect(origin: .zero, size: panelRect.size))
+        bg.wantsLayer = true
+        bg.layer?.backgroundColor = NSColor.white.cgColor
+        bg.layer?.cornerRadius = 6
+        bg.layer?.borderWidth = 1.5
+        bg.layer?.borderColor = NSColor.systemBlue.cgColor
+        bg.layer?.shadowColor = NSColor.black.cgColor
+        bg.layer?.shadowOpacity = 0.2
+        bg.layer?.shadowRadius = 8
+        panel.contentView = bg
+        
+        // Text field inside panel
+        let field = NSTextField(frame: NSRect(x: 6, y: 4, width: panelWidth - 12, height: panelHeight - 8))
+        field.isBordered = false
+        field.backgroundColor = .clear
+        field.font = .systemFont(ofSize: fontSize)
+        field.textColor = currentColor
+        field.focusRingType = .none
+        field.isEditable = true
+        field.isSelectable = true
+        field.placeholderString = placeholder
+        field.delegate = self
+        field.target = self
+        field.action = #selector(textInputComplete(_:))
+        bg.addSubview(field)
+        
+        textInputPanel = panel
+        
+        // Show panel and make it key so it receives keyboard input
+        panel.orderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(field)
+    }
+    
+    @objc private func textInputComplete(_ sender: Any?) {
+        guard let panel = textInputPanel,
+              let field = panel.contentView?.subviews.compactMap({ $0 as? NSTextField }).first,
+              !field.stringValue.isEmpty else {
+            removeTextInput()
             return
         }
         
-        let annotation = CalloutAnnotation()
-        applyCurrentProperties(to: annotation)
-        annotation.cornerRadius = 8
-        annotation.text = field.stringValue
-        annotation.color = currentColor
+        let text = field.stringValue
+        let loc = textInputLocation
         
-        // Position callout based on text field location
-        let location = field.frame.origin
-        annotation.startPoint = location
-        annotation.endPoint = CGPoint(x: location.x + 150, y: location.y + 80)
+        if textInputTag == 2 {
+            // Callout
+            let annotation = CalloutAnnotation()
+            applyCurrentProperties(to: annotation)
+            annotation.cornerRadius = 8
+            annotation.text = text
+            annotation.color = currentColor
+            annotation.startPoint = loc
+            annotation.endPoint = CGPoint(x: loc.x + 150, y: loc.y + 80)
+            undoStack.append(annotations)
+            redoStack.removeAll()
+            annotations.append(annotation)
+        } else {
+            // Text
+            let annotation = TextAnnotation()
+            annotation.color = currentColor
+            annotation.text = text
+            annotation.startPoint = CGPoint(x: loc.x, y: loc.y + 12)
+            undoStack.append(annotations)
+            redoStack.removeAll()
+            annotations.append(annotation)
+        }
         
-        // Save state for undo
-        undoStack.append(annotations)
-        redoStack.removeAll()
-        
-        annotations.append(annotation)
-        
-        textField?.removeFromSuperview()
-        textField = nil
+        removeTextInput()
+        // Restore focus to main window
+        self.window?.makeKeyAndOrderFront(nil)
         needsDisplay = true
     }
     
@@ -390,17 +393,10 @@ class CanvasView: NSView, NSTextFieldDelegate {
     
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            // User pressed Return key - trigger the appropriate completion
-            if let field = textField, field.action == #selector(calloutInputComplete) {
-                calloutInputComplete()
-            } else {
-                textInputComplete()
-            }
+            textInputComplete(control)
             return true
         } else if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            // User pressed Escape key
-            textField?.removeFromSuperview()
-            textField = nil
+            removeTextInput()
             return true
         }
         return false
